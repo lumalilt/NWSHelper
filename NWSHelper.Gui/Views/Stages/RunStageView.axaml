@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:NWSHelper.Gui.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="NWSHelper.Gui.Views.Stages.RunStageView"
+             x:DataType="vm:MainWindowViewModel">
+    <StackPanel Spacing="12">
+        <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Run Progress" FontSize="20" FontWeight="SemiBold" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding RunState, StringFormat='State: {0}'}" />
+                        <TextBlock Text="{Binding Elapsed, StringFormat='Elapsed: {0}'}" />
+                        <TextBlock Text="{Binding ProcessedCount, StringFormat='Processed: {0}'}" />
+                        <TextBlock Text="{Binding MatchedCount, StringFormat='Matched: {0}'}" />
+                        <TextBlock Text="{Binding NewCount, StringFormat='New: {0}'}" />
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            Command="{Binding CancelRunCommand}"
+                            Content="Cancel"
+                            ToolTip.Tip="Cancel the running extraction [Escape]"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Right"
+                            IsEnabled="{Binding IsBusy}" />
+                </Grid>
+
+                <ItemsControl ItemsSource="{Binding ProgressLanes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ProgressLaneViewModel">
+                            <Border BorderBrush="{DynamicResource DividerBrush}" BorderThickness="1" Padding="10" Margin="0,6,0,0">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding PercentComplete}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <TextBlock Text="{Binding PercentComplete, StringFormat='Progress: {0:F0}%'}" />
+                                        <TextBlock Text="{Binding ProcessedCount, StringFormat='Processed: {0}'}" />
+                                        <TextBlock Text="{Binding MatchedCount, StringFormat='Matched: {0}'}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

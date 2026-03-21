@@ -1,0 +1,48 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="NWSHelper.Gui.App"
+             xmlns:local="using:NWSHelper.Gui"
+             RequestedThemeVariant="Default">
+             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="ShellHeaderBackgroundBrush">#E2E8F0</SolidColorBrush>
+                    <SolidColorBrush x:Key="ShellHeaderForegroundBrush">#0F172A</SolidColorBrush>
+                    <SolidColorBrush x:Key="ShellHeaderSubtitleForegroundBrush">#334155</SolidColorBrush>
+                    <SolidColorBrush x:Key="StageNavBackgroundBrush">#CBD5E1</SolidColorBrush>
+                    <SolidColorBrush x:Key="StageNavActiveBackgroundBrush">#334155</SolidColorBrush>
+                    <SolidColorBrush x:Key="StageNavActiveForegroundBrush">#F8FAFC</SolidColorBrush>
+                    <SolidColorBrush x:Key="CardBackgroundBrush">#F8FAFC</SolidColorBrush>
+                    <SolidColorBrush x:Key="CardBorderBrush">#94A3B8</SolidColorBrush>
+                    <SolidColorBrush x:Key="SuccessBadgeBrush">#16A34A</SolidColorBrush>
+                    <SolidColorBrush x:Key="DividerBrush">#E2E8F0</SolidColorBrush>
+                    <SolidColorBrush x:Key="MetricBorderBrush">#CBD5E1</SolidColorBrush>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="ShellHeaderBackgroundBrush">#0B1220</SolidColorBrush>
+                    <SolidColorBrush x:Key="ShellHeaderForegroundBrush">#F8FAFC</SolidColorBrush>
+                    <SolidColorBrush x:Key="ShellHeaderSubtitleForegroundBrush">#9CA3AF</SolidColorBrush>
+                    <SolidColorBrush x:Key="StageNavBackgroundBrush">#111827</SolidColorBrush>
+                    <SolidColorBrush x:Key="StageNavActiveBackgroundBrush">#4B5563</SolidColorBrush>
+                    <SolidColorBrush x:Key="StageNavActiveForegroundBrush">#F8FAFC</SolidColorBrush>
+                    <SolidColorBrush x:Key="CardBackgroundBrush">#1F2937</SolidColorBrush>
+                    <SolidColorBrush x:Key="CardBorderBrush">#374151</SolidColorBrush>
+                    <SolidColorBrush x:Key="SuccessBadgeBrush">#16A34A</SolidColorBrush>
+                    <SolidColorBrush x:Key="DividerBrush">#374151</SolidColorBrush>
+                    <SolidColorBrush x:Key="MetricBorderBrush">#4B5563</SolidColorBrush>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+  
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+</Application>

@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:NWSHelper.Gui.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="NWSHelper.Gui.Views.Stages.PreviewStageView"
+             x:DataType="vm:MainWindowViewModel">
+    <Grid RowDefinitions="*,Auto">
+        <Border Grid.Row="0" Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="8">
+                <TextBlock Grid.Row="0" Text="Preview + Selection" FontSize="20" FontWeight="SemiBold" />
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+                    <Button Command="{Binding ApplySmartSelectionCommand}" Content="Apply Smart Selection" ToolTip.Tip="Select territories that do not exceed warning threshold" />
+                    <TextBlock VerticalAlignment="Center"
+                               Text="{Binding SelectedTerritoryCount, StringFormat='Selected: {0} / '}">
+                    </TextBlock>
+                    <TextBlock VerticalAlignment="Center" Text="{Binding TotalPreviewCount}" />
+                </StackPanel>
+
+                <Border Grid.Row="2"
+                        Padding="8"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource CardBorderBrush}"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        IsVisible="{Binding HasCappedOutputMessage}">
+                    <TextBlock Text="{Binding CappedOutputMessage}" TextWrapping="Wrap" />
+                </Border>
+
+                <Grid Grid.Row="3" ColumnDefinitions="40,160,90,80,80,90,*" Margin="0,8,0,0">
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding AllPreviewRowsSelected, Mode=TwoWay}"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Select or clear all preview rows" />
+                    <TextBlock Grid.Column="1" Text="Territory" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="2" Text="Existing" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="3" Text="New" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="4" Text="Total" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="5" Text="Warn" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="6" Text="Preview Path" FontWeight="SemiBold" />
+                </Grid>
+
+                <ScrollViewer Grid.Row="4" MinHeight="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding TerritoryPreviewRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:TerritoryPreviewItemViewModel">
+                                    <Border BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1" Padding="0,6">
+                                        <Grid ColumnDefinitions="40,160,90,80,80,90,*">
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding TerritoryLabel}"
+                                                       TextWrapping="NoWrap"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,0,12,0"
+                                                       ToolTip.Tip="{Binding TerritoryLabel}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding ExistingCount}" />
+                                            <TextBlock Grid.Column="3" Text="{Binding NewCount}" />
+                                            <TextBlock Grid.Column="4" Text="{Binding TotalCount}" />
+                                            <TextBlock Grid.Column="5" Text="{Binding WarningLabel}" />
+                                            <TextBlock Grid.Column="6" Text="{Binding ProposedOutputPath}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Padding="0" Margin="0,6,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Command="{Binding StartExtractionCommand}" Content="Run Extraction" ToolTip.Tip="Run extraction for selected territories [Ctrl+Enter]" />
+                <TextBlock IsVisible="{Binding IsBusy}" VerticalAlignment="Center" Text="Working..." />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

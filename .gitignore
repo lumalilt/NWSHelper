@@ -1,0 +1,63 @@
+# Build outputs
+bin/
+obj/
+[Bb]uild/
+[Bb]in/**
+[Oo]bj/**
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+
+# IDE folders
+.vs/
+.idea/
+*.swp
+*.swo
+
+# Rider/JetBrains
+.idea/
+*.iml
+
+# VS Code (keep tracked files explicitly if needed)
+.vscode/
+
+# Test and coverage artifacts
+TestResult*/
+*.trx
+*.coverage*
+coverage/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+project.lock.json
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Application specific
+datasets/**/*
+!datasets/openaddresses
+!datasets/openaddresses/**/
+!datasets/**/*.gitKeep
+output/**/*
+!output/**/*.gitKeep
+input/**/*
+!input/**/*.gitKeep
+
+# Local tooling
+tools/penpot-mcp/
+
+# Packaging and local Supabase CLI state
+artifacts/
+supabase/.temp/
+temp/

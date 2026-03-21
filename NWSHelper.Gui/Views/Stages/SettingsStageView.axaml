@@ -1,0 +1,270 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:NWSHelper.Gui.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="NWSHelper.Gui.Views.Stages.SettingsStageView"
+             x:DataType="vm:MainWindowViewModel">
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Escape" Command="{Binding GoToPreviousStageCommand}" />
+    </UserControl.KeyBindings>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="16">
+            <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" />
+                    <TextBlock Text="Theme" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="Choose how NWSHelper should appear." />
+
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <TextBlock VerticalAlignment="Center" Text="Theme Preference" Width="180" />
+                        <ComboBox Width="220"
+                                  ItemsSource="{Binding ThemePreferences}"
+                                  SelectedItem="{Binding SelectedThemePreference, Mode=TwoWay}" />
+                    </StackPanel>
+
+                    <TextBlock Text="System follows your OS light/dark setting." />
+
+                    <Separator />
+
+                    <TextBlock Text="Performance" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="Map rendering controls for large datasets." />
+
+                    <StackPanel Spacing="8" Margin="0,4,0,0">
+                        <CheckBox IsChecked="{Binding EnableMapIncrementalDiffs, Mode=TwoWay}"
+                                  Content="Incremental collection updates (diff-based)" />
+                        <CheckBox IsChecked="{Binding EnableMapRenderItemReuse, Mode=TwoWay}"
+                                  Content="Render item reuse and pooling" />
+                        <CheckBox IsChecked="{Binding EnableMapAddressPointDeduplication, Mode=TwoWay}"
+                                  Content="Deduplicate points by TerritoryID + Number + Street" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock VerticalAlignment="Center" Text="Tile cache life (days)" />
+                            <NumericUpDown Minimum="1"
+                                           Maximum="365"
+                                           Width="100"
+                                           Value="{Binding MapTileCacheLifeDays, Mode=TwoWay}" />
+                            <Button Content="Reset Tile Cache" Command="{Binding ResetMapTileCacheCommand}" ToolTip.Tip="Clear cached map tiles" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Separator />
+
+                    <TextBlock Text="Dataset Providers" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="Configuration used by provider-backed dataset downloads from Setup." />
+
+                    <StackPanel Spacing="8" Margin="0,4,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="OpenAddresses API Base URL" Width="220" />
+                            <TextBox Width="420"
+                                     Text="{Binding OpenAddressesApiBaseUrl, Mode=TwoWay}"
+                                     Watermark="https://batch.openaddresses.io/api" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="OpenAddresses API Token" Width="220" />
+                            <TextBox Width="420"
+                                     Text="{Binding OpenAddressesApiToken, Mode=TwoWay}"
+                                     Watermark="Bearer token for protected downloads" />
+                            <Button Content="Test" Command="{Binding TestDatasetProviderConnectionCommand}" ToolTip.Tip="Test dataset provider connection" />
+                            <Border Width="18"
+                                    Height="18"
+                                    CornerRadius="9"
+                                    Background="{DynamicResource SuccessBadgeBrush}"
+                                    IsVisible="{Binding IsDatasetProviderConnectionVerified}">
+                                <TextBlock HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="White"
+                                           Text="✓" />
+                            </Border>
+                            <TextBlock VerticalAlignment="Center"
+                                       IsVisible="{Binding IsTestingDatasetProviderConnection}"
+                                       Text="Testing..." />
+                        </StackPanel>
+
+                        <CheckBox IsChecked="{Binding UseEmbeddedOpenAddressesOnboardingWebView, Mode=TwoWay}"
+                                  Content="Use embedded browser for OpenAddresses onboarding (fallback: external browser modal)" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="API onboarding type" Width="220" />
+                            <ComboBox Width="240"
+                                      ItemsSource="{Binding ApiOnboardingTypes}"
+                                      SelectedItem="{Binding OpenAddressesApiOnboardingType, Mode=TwoWay}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4"
+                                    IsVisible="{Binding HasLastOpenAddressesOnboardingSuccessSummary}">
+                            <TextBlock Text="Last OpenAddresses onboarding success" FontWeight="SemiBold" />
+                            <TextBox
+                                IsReadOnly="True"
+                                Text="{Binding LastOpenAddressesOnboardingSuccessSummary}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Separator />
+
+                    <TextBlock Text="Application" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="Version and update behavior for this install channel." />
+
+                    <StackPanel Spacing="8" Margin="0,4,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Version" Width="180" />
+                            <TextBox Width="420"
+                                     IsReadOnly="True"
+                                     Text="{Binding CurrentVersion}" />
+                        </StackPanel>
+
+                        <CheckBox IsChecked="{Binding AutoUpdateEnabled, Mode=TwoWay}"
+                                  IsEnabled="{Binding CanConfigureAutoUpdatePolicy}"
+                                  Content="Automatically check for updates on startup" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Content="Check for Updates"
+                                    Command="{Binding CheckForUpdatesCommand}"
+                                    ToolTip.Tip="Check update source now" />
+                            <TextBlock VerticalAlignment="Center"
+                                       IsVisible="{Binding IsCheckingForUpdates}"
+                                       Text="Checking..." />
+                            <TextBlock VerticalAlignment="Center"
+                                       IsVisible="{Binding IsStoreInstall}"
+                                       Text="Store install detected; updates are handled by Microsoft Store." />
+                        </StackPanel>
+
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="{Binding UpdateStatusMessage}" />
+                    </StackPanel>
+
+                    <Separator />
+
+                        <TextBlock Text="Product Activation" FontSize="16" FontWeight="SemiBold" />
+                        <TextBlock Text="Activate product add-on." />
+
+                    <StackPanel Spacing="8" Margin="0,4,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Add-on" Width="180" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding EntitlementAddOnLabel}" FontWeight="SemiBold" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Limit" Width="180" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding EntitlementLimitLabel}" />
+                        </StackPanel>
+
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="{Binding EntitlementStatusMessage}" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBox Width="420"
+                                     Text="{Binding ActivationKey, Mode=TwoWay}"
+                                     Watermark="Enter activation key" />
+                            <Button Content="Activate"
+                                    Command="{Binding ActivateProductAddOnCommand}"
+                                    ToolTip.Tip="Validate and apply activation key" />
+                            <Button Content="Refresh"
+                                    Command="{Binding RefreshEntitlementStatusCommand}"
+                                    ToolTip.Tip="Refresh entitlement status" />
+                        </StackPanel>
+
+                        <TextBlock VerticalAlignment="Center"
+                                   IsVisible="{Binding IsActivatingEntitlement}"
+                                   Text="Validating entitlement..." />
+                    </StackPanel>
+
+                    <Separator />
+
+                    <TextBlock Text="Account Link" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="Unified Store + direct entitlement state for this install." />
+
+                    <StackPanel Spacing="8" Margin="0,4,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Account Email" Width="180" />
+                            <TextBox Width="420"
+                                     Text="{Binding AccountLinkEmail, Mode=TwoWay}"
+                                     Watermark="Enter email for account link" />
+                                <Button Content="Link Email"
+                                    Command="{Binding StartAccountSignInCommand}"
+                                    IsEnabled="{Binding CanStartAccountSignIn}"
+                                    ToolTip.Tip="Associate an email with this install for Store/direct entitlement state" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Status" Width="180" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding AccountLinkStatusLabel}" FontWeight="SemiBold" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Account" Width="180" />
+                            <TextBox Width="420"
+                                     IsReadOnly="True"
+                                     Text="{Binding LinkedAccountIdentity}" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Purchase Source" Width="180" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding LinkedPurchaseSourceLabel}" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Last Sync" Width="180" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding LinkedAccountLastSyncLabel}" />
+                        </StackPanel>
+
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="{Binding AccountLinkStatusMessage}" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Content="Refresh Link Status"
+                                    Command="{Binding RefreshAccountLinkStatusCommand}"
+                                    IsEnabled="{Binding CanRefreshAccountLink}"
+                                    ToolTip.Tip="Refresh account link and entitlement state from the bridge service" />
+                            <Button Content="Restore Store Purchase"
+                                    Command="{Binding RestoreStorePurchaseCommand}"
+                                    IsEnabled="{Binding CanRestoreStorePurchase}"
+                                    ToolTip.Tip="Link Store ownership for this install after account sign-in" />
+                            <Button Content="Clear Linked Account"
+                                    Command="{Binding ClearLinkedAccountCommand}"
+                                    IsEnabled="{Binding CanClearAccountLink}"
+                                    ToolTip.Tip="Clear the cached account link for this install" />
+                        </StackPanel>
+
+                        <TextBlock IsVisible="{Binding IsAccountLinkBusy}"
+                                   Text="Contacting bridge service..." />
+                        <TextBlock IsVisible="{Binding IsStoreInstall}"
+                                   Text="Store install detected. Restore Store Purchase will be available after account sign-in succeeds."
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <Separator />
+
+                    <TextBlock Text="Migration" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="Move non-secret settings and linked-account state between install channels." />
+
+                    <StackPanel Spacing="8" Margin="0,4,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Content="Export Migration Backup"
+                                    Click="OnExportMigrationBackupClick"
+                                    ToolTip.Tip="Export theme, setup defaults, update preference, and linked-account cache" />
+                            <Button Content="Import Migration Backup"
+                                    Click="OnImportMigrationBackupClick"
+                                    ToolTip.Tip="Import a migration backup or existing gui-settings.json from another install" />
+                        </StackPanel>
+
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="Activation keys and entitlement tokens are intentionally excluded. After import on a direct install, sign in with the same email and refresh account link status to rehydrate Store entitlement through the bridge." />
+                    </StackPanel>
+
+                    <Separator />
+
+                    <TextBlock Text="Setup" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="Reset setup fields and options to default values." />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Reset Setup Defaults" Command="{Binding ResetSetupDefaultsCommand}" ToolTip.Tip="Restore setup fields and options to defaults" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

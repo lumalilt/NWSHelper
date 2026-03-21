@@ -1,0 +1,171 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:NWSHelper.Gui.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Name="Root"
+             x:Class="NWSHelper.Gui.Views.Stages.ResultsStageView"
+             x:DataType="vm:MainWindowViewModel">
+    <UserControl.Styles>
+        <Style Selector="Button.path-link">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+        </Style>
+
+        <Style Selector="Button.icon-action">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="20" />
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,0,64">
+        <StackPanel Spacing="12">
+            <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Results Summary" FontSize="20" FontWeight="SemiBold" />
+                    <Border IsVisible="{Binding HasCappedOutputMessage}"
+                            Padding="8"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource CardBorderBrush}"
+                            Background="{DynamicResource CardBackgroundBrush}">
+                        <TextBlock Text="{Binding CappedOutputMessage}" TextWrapping="Wrap" />
+                    </Border>
+                    <Grid ColumnDefinitions="*,*,*,*,*" RowDefinitions="Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+                        <Border Grid.Row="0" Grid.Column="0" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Existing"/><TextBlock FontSize="20" Text="{Binding ExistingTotal}"/></StackPanel></Border>
+                        <Border Grid.Row="0" Grid.Column="1" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Found"/><TextBlock FontSize="20" Text="{Binding FoundTotal}"/></StackPanel></Border>
+                        <Border Grid.Row="0" Grid.Column="2" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Distinct"/><TextBlock FontSize="20" Text="{Binding DistinctTotal}"/></StackPanel></Border>
+                        <Border Grid.Row="0" Grid.Column="3" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="New"/><TextBlock FontSize="20" Text="{Binding NewCount}"/></StackPanel></Border>
+                        <Border Grid.Row="0" Grid.Column="4" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Written"/><TextBlock FontSize="20" Text="{Binding WrittenTotal}"/></StackPanel></Border>
+
+                        <Border Grid.Row="1" Grid.Column="0" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Planned"/><TextBlock FontSize="20" Text="{Binding PlannedTotal}"/></StackPanel></Border>
+                        <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Skipped NN"/><TextBlock FontSize="20" Text="{Binding SkippedNoneNewTotal}"/></StackPanel></Border>
+                        <Border Grid.Row="1" Grid.Column="2" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Skipped XT"/><TextBlock FontSize="20" Text="{Binding SkippedThresholdTotal}"/></StackPanel></Border>
+                        <Border Grid.Row="1" Grid.Column="3" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Warnings"/><TextBlock FontSize="20" Text="{Binding WarningCount}"/></StackPanel></Border>
+                        <Border Grid.Row="1" Grid.Column="4" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Geo Overwrite"/><TextBlock FontSize="20" Text="{Binding CoordinateOverwriteCount}"/></StackPanel></Border>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
+                <TabControl SelectedIndex="{Binding ResultsTabIndex, Mode=TwoWay}">
+                    <TabItem Header="Output">
+                        <StackPanel Spacing="8" Margin="0,8,0,0">
+                            <Grid ColumnDefinitions="140,220,*,44,44" ColumnSpacing="4">
+                                <TextBlock Grid.Column="0" Text="Group" FontWeight="SemiBold" />
+                                <TextBlock Grid.Column="1" Text="Name" FontWeight="SemiBold" />
+                                <TextBlock Grid.Column="2" Text="Path" FontWeight="SemiBold" />
+                                <TextBlock Grid.Column="3" Text="Map" FontWeight="SemiBold" />
+                                <TextBlock Grid.Column="4" Text="Copy" FontWeight="SemiBold" />
+                            </Grid>
+
+                            <ItemsControl ItemsSource="{Binding OutputArtifacts}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:OutputArtifactItemViewModel">
+                                        <Border BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1" Padding="0,6">
+                                            <Grid ColumnDefinitions="140,220,*,44,44" ColumnSpacing="4">
+                                                <TextBlock Grid.Column="0" Text="{Binding Group}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" />
+                                                <Button Grid.Column="3"
+                                                        Classes="icon-action"
+                                                        IsEnabled="{Binding HasPath}"
+                                                        ToolTip.Tip="Preview addresses on map"
+                                                        Command="{Binding #Root.DataContext.PreviewOutputMapCommand}"
+                                                        CommandParameter="{Binding Path}">
+                                                    <Button.Content>
+                                                        <TextBlock Text="👁" FontSize="20" TextAlignment="Center" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                                    </Button.Content>
+                                                </Button>
+                                                <Button Grid.Column="2"
+                                                        Classes="path-link"
+                                                        IsEnabled="{Binding HasPath}"
+                                                        ToolTip.Tip="Open file"
+                                                        Command="{Binding #Root.DataContext.OpenOutputPathCommand}"
+                                                        CommandParameter="{Binding Path}">
+                                                    <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" TextDecorations="Underline" />
+                                                </Button>
+                                                <Button Grid.Column="4"
+                                                        Classes="icon-action"
+                                                        IsEnabled="{Binding HasPath}"
+                                                        ToolTip.Tip="Copy file path"
+                                                        Command="{Binding #Root.DataContext.CopyOutputPathCommand}"
+                                                        CommandParameter="{Binding Path}">
+                                                    <Button.Content>
+                                                        <TextBlock Text="⧉" FontSize="20" TextAlignment="Center" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                                    </Button.Content>
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </TabItem>
+
+                    <TabItem Header="Results">
+                        <StackPanel Spacing="8" Margin="0,8,0,0">
+                            <Grid ColumnDefinitions="170,70,70,70,70,80,70,70,70,70,80,*">
+                                <TextBlock Grid.Column="0" Text="Territory" FontWeight="SemiBold" />
+                                <TextBlock Grid.Column="1" Text="Ex" FontWeight="SemiBold" ToolTip.Tip="Existing" />
+                                <TextBlock Grid.Column="2" Text="Fd" FontWeight="SemiBold" ToolTip.Tip="Found" />
+                                <TextBlock Grid.Column="3" Text="Ds" FontWeight="SemiBold" ToolTip.Tip="Distinct" />
+                                <TextBlock Grid.Column="4" Text="New" FontWeight="SemiBold" ToolTip.Tip="New" />
+                                <TextBlock Grid.Column="5" Text="Wr" FontWeight="SemiBold" ToolTip.Tip="Written" />
+                                <TextBlock Grid.Column="6" Text="Warn" FontWeight="SemiBold" ToolTip.Tip="Warning" />
+                                <TextBlock Grid.Column="7" Text="Add" FontWeight="SemiBold" ToolTip.Tip="State/Postal Backfill" />
+                                <TextBlock Grid.Column="8" Text="Geo" FontWeight="SemiBold" ToolTip.Tip="Geocoordinate Backfill" />
+                                <TextBlock Grid.Column="9" Text="Ovr" FontWeight="SemiBold" ToolTip.Tip="Geocoordinate Overwrite" />
+                                <TextBlock Grid.Column="10" Text="ConOnly" FontWeight="SemiBold" ToolTip.Tip="Consolidated Only" />
+                                <TextBlock Grid.Column="11" Text="Output" FontWeight="SemiBold" ToolTip.Tip="Output Path" />
+                            </Grid>
+
+                            <ItemsControl ItemsSource="{Binding TerritoryResults}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:TerritoryResultItemViewModel">
+                                        <Border BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1" Padding="0,6">
+                                            <Grid ColumnDefinitions="170,70,70,70,70,80,70,70,70,70,80,*">
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding Label}"
+                                                           TextWrapping="NoWrap"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Margin="0,0,12,0"
+                                                           ToolTip.Tip="{Binding Label}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding ExistingCount}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding FoundCount}" />
+                                                <TextBlock Grid.Column="3" Text="{Binding DistinctCount}" />
+                                                <TextBlock Grid.Column="4" Text="{Binding NewCount}" />
+                                                <TextBlock Grid.Column="5" Text="{Binding WrittenCount}" />
+                                                <TextBlock Grid.Column="6" Text="{Binding WarningMarker}" />
+                                                <TextBlock Grid.Column="7" Text="{Binding AddFill}" />
+                                                <TextBlock Grid.Column="8" Text="{Binding GeoFill}" />
+                                                <TextBlock Grid.Column="9" Text="{Binding Overwrite}" />
+                                                <TextBlock Grid.Column="10" Text="{Binding ConsolidatedOnly}" />
+                                                <Button Grid.Column="11"
+                                                        IsEnabled="{Binding HasOutputPath}"
+                                                        HorizontalAlignment="Left"
+                                                        Padding="0"
+                                                        ToolTip.Tip="{Binding OutputPath}"
+                                                        Command="{Binding #Root.DataContext.OpenOutputPathCommand}"
+                                                        CommandParameter="{Binding OutputPath}"
+                                                        Content="{Binding OutputPath}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </TabItem>
+                </TabControl>
+            </Border>
+
+            <Border Height="64" Background="Transparent" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

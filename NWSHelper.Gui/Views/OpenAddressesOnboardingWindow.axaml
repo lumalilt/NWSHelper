@@ -1,0 +1,138 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:webview="clr-namespace:WebViewControl;assembly=WebViewControl.Avalonia"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="NWSHelper.Gui.Views.OpenAddressesOnboardingWindow"
+        Width="860"
+        Height="850"
+        MinWidth="760"
+        MinHeight="520"
+        Title="OpenAddresses API Key Setup"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10" Margin="16">
+        <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock Text="Set up OpenAddresses API Key" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock x:Name="OnboardingInstructionText"
+                       Text="Register for or log into OpenAddresses for API access to get address datasets"
+                       Opacity="0.85"
+                       TextWrapping="Wrap" />
+
+            <TextBlock x:Name="EmbeddedOnboardingTitleText"
+                       Margin="0,6,0,0"
+                       Text="Embedded OpenAddresses onboarding"
+                       FontWeight="SemiBold" />
+            <WrapPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <Button x:Name="RegisterButton"
+                        Margin="0,0,8,8"
+                        Content="Register"
+                        Click="OnOpenRegisterClick"
+                        ToolTip.Tip="Navigate embedded browser to https://batch.openaddresses.io/register" />
+                <Button x:Name="ProfileButton"
+                        Margin="0,0,8,8"
+                        Content="Profile"
+                        Click="OnOpenProfileClick"
+                        ToolTip.Tip="Navigate embedded browser to https://batch.openaddresses.io/profile" />
+                <Button x:Name="OpenExternalBrowserButton"
+                        Margin="0,0,8,8"
+                        Content="Open in External Browser"
+                        Click="OnOpenExternalBrowserClick"
+                        ToolTip.Tip="Open current onboarding page in system browser" />
+            </WrapPanel>
+        </StackPanel>
+
+        <Border x:Name="EmbeddedOnboardingPanel"
+                Grid.Row="1"
+                Background="{DynamicResource CardBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="1"
+                Padding="12">
+            <webview:WebView x:Name="EmbeddedWebView"
+                             Height="450"
+                             MinHeight="410"
+                             Address="https://batch.openaddresses.io/register" />
+        </Border>
+
+        <Border x:Name="FallbackOnboardingPanel"
+                Grid.Row="1"
+                IsVisible="False"
+                Background="{DynamicResource CardBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="1"
+                Padding="12">
+            <StackPanel Spacing="8">
+                <TextBlock Text="OpenAddresses site signup/login steps" FontWeight="SemiBold" />
+                <TextBlock Text="1) Open register page and sign up or log in" />
+                <TextBlock Text="2) Follow instructions to verify account" />
+                <TextBlock Text="3) Open profile page, click add API key (+), and copy the key" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Open Register Page"
+                            Click="OnOpenRegisterClick"
+                            ToolTip.Tip="Open https://batch.openaddresses.io/register" />
+                    <Button Content="Open Profile Page"
+                            Click="OnOpenProfileClick"
+                            ToolTip.Tip="Open https://batch.openaddresses.io/profile" />
+                </StackPanel>
+                <TextBlock FontSize="11"
+                           Opacity="0.8"
+                           Text="Register: https://batch.openaddresses.io/register" />
+                <TextBlock FontSize="11"
+                           Opacity="0.8"
+                           Text="Profile: https://batch.openaddresses.io/profile" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock Grid.Row="2"
+               x:Name="AutomationStatusText"
+               FontSize="11"
+               Opacity="0.85"
+                   Text="Status: Waiting for Profile page view" />
+
+        <Border Grid.Row="3"
+            x:Name="ManualApiEntryPanel"
+                Background="{DynamicResource CardBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="1"
+                Padding="12">
+            <StackPanel Spacing="10">
+                <TextBlock x:Name="ApiKeySectionLabel" Text="OpenAddresses API Key" FontWeight="SemiBold" />
+                <TextBox x:Name="ApiTokenTextBox"
+                         Watermark="Paste API key here"
+                         TextWrapping="NoWrap" />
+                <WrapPanel x:Name="ApiKeyToolsPanel" Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button x:Name="PasteFromClipboardButton" Margin="0,0,8,8" Content="Paste from Clipboard" Click="OnPasteFromClipboardClick" />
+                    <Button x:Name="FindKeyOnPageButton" Margin="0,0,8,8" Content="Find Key on Page" Click="OnFindKeyOnPageClick" />
+                    <Button x:Name="StartDomPickerButton" Margin="0,0,8,8" Content="Start DOM Picker" Click="OnStartDomPickerClick" />
+                    <Button x:Name="CaptureSelectedDomButton" Margin="0,0,8,8" Content="Capture Selected DOM" Click="OnCaptureSelectedDomClick" />
+                    <Button x:Name="StopDomPickerButton" Margin="0,0,8,8" Content="Stop DOM Picker" Click="OnStopDomPickerClick" />
+                    <Button x:Name="CopyDomOutputButton" Margin="0,0,8,8" Content="Copy DOM Output" Click="OnCopyDomOutputClick" />
+                    <Button x:Name="ReadWebViewSnapshotButton" Margin="0,0,8,8" Content="Read WebView Snapshot" Click="OnReadWebViewSnapshotClick" />
+                    <Button x:Name="ClearApiKeyButton" Margin="0,0,8,8" Content="Clear" Click="OnClearApiKeyClick" />
+                </WrapPanel>
+                <TextBox x:Name="DomExplorerOutputTextBox"
+                         Height="130"
+                         IsVisible="False"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         Watermark="DOM explorer output appears here after Capture Selected DOM." />
+                <TextBlock x:Name="ValidationMessage"
+                           IsVisible="False"
+                           Foreground="{DynamicResource ShellHeaderSubtitleForegroundBrush}"
+                           Text="An API key is required to continue." />
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="4"
+                    x:Name="BottomActionPanel"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8">
+            <Button x:Name="CancelButton" Content="Cancel" Click="OnCancelClick" />
+            <Button x:Name="SaveApiKeyButton" Content="Save API Key &amp; Continue" Click="OnSaveAndContinueClick" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,192 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:NWSHelper.Gui.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="NWSHelper.Gui.Views.OutputMapPreviewWindow"
+        x:DataType="vm:OutputMapPreviewViewModel"
+        Width="1500"
+        Height="1080"
+        MinWidth="1200"
+        MinHeight="820"
+        Title="{Binding WindowTitle}">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Opacity" Value="0.8" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="12">
+        <Border Grid.Row="0"
+                Background="{DynamicResource CardBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="1"
+                Padding="10">
+            <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                <TextBlock Grid.Row="0" Text="{Binding HeaderTitle}" FontWeight="SemiBold" FontSize="16" />
+
+                <TextBlock Grid.Row="1"
+                           Classes="muted"
+                           Text="{Binding CoverageNote}" />
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center" Text="Provider:" FontWeight="SemiBold" />
+                    <ComboBox Width="210"
+                              ItemsSource="{Binding MapProviders}"
+                              SelectedItem="{Binding SelectedMapProvider, Mode=TwoWay}" />
+                    <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding ProviderNote}" />
+                    <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding MapLayerStatus}" />
+                    <Separator Margin="6,0" />
+                    <Button Command="{Binding ZoomOutCommand}" Content="-" Width="34" ToolTip.Tip="Zoom out" />
+                    <TextBlock VerticalAlignment="Center" Text="{Binding ZoomStatus}" FontWeight="SemiBold" />
+                    <Button Command="{Binding ZoomInCommand}" Content="+" Width="34" ToolTip.Tip="Zoom in" />
+                    <Button Command="{Binding ResetZoomCommand}" Content="Reset" ToolTip.Tip="Reset zoom level" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                Background="{DynamicResource CardBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="1"
+                Padding="8"
+                ClipToBounds="True">
+            <Grid>
+                <Border x:Name="MapViewport"
+                        PointerWheelChanged="OnMapPointerWheelChanged"
+                        PointerPressed="OnMapPointerPressed"
+                        PointerMoved="OnMapPointerMoved"
+                        PointerReleased="OnMapPointerReleased"
+                        PointerCaptureLost="OnMapPointerCaptureLost">
+                    <Canvas Width="1400" Height="900">
+
+                        <Rectangle Width="1400" Height="900" Fill="#10243A" />
+                        <Rectangle Width="1400" Height="900" Stroke="#304862" StrokeThickness="1" />
+
+                        <ItemsControl ItemsSource="{Binding Tiles}"
+                                      Width="1400"
+                                      Height="900"
+                                      Canvas.Left="0"
+                                      Canvas.Top="0">
+                            <ItemsControl.Styles>
+                                <Style Selector="ContentPresenter">
+                                    <Setter Property="Canvas.Left" Value="{ReflectionBinding X}" />
+                                    <Setter Property="Canvas.Top" Value="{ReflectionBinding Y}" />
+                                </Style>
+                            </ItemsControl.Styles>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:MapPreviewTileViewModel">
+                                    <Image Width="256"
+                                           Height="256"
+                                           Stretch="Fill"
+                                           Source="{Binding Image}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <ItemsControl ItemsSource="{Binding Boundaries}"
+                                      Width="1400"
+                                      Height="900"
+                                      Canvas.Left="0"
+                                      Canvas.Top="0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:MapBoundaryViewModel">
+                                    <Polyline Points="{Binding Points}"
+                                              Stroke="{Binding StrokeBrush}"
+                                              StrokeThickness="2"
+                                              Fill="Transparent"
+                                              ToolTip.Tip="{Binding HoverDetails}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Line StartPoint="466.67,0" EndPoint="466.67,900" Stroke="#304862" StrokeThickness="0.8" IsVisible="{Binding ShowFallbackGrid}" />
+                        <Line StartPoint="933.33,0" EndPoint="933.33,900" Stroke="#304862" StrokeThickness="0.8" IsVisible="{Binding ShowFallbackGrid}" />
+                        <Line StartPoint="0,300" EndPoint="1400,300" Stroke="#304862" StrokeThickness="0.8" IsVisible="{Binding ShowFallbackGrid}" />
+                        <Line StartPoint="0,600" EndPoint="1400,600" Stroke="#304862" StrokeThickness="0.8" IsVisible="{Binding ShowFallbackGrid}" />
+
+                        <ItemsControl ItemsSource="{Binding Points}"
+                                      Width="1400"
+                                      Height="900"
+                                      Canvas.Left="0"
+                                      Canvas.Top="0">
+                            <ItemsControl.Styles>
+                                <Style Selector="ContentPresenter">
+                                    <Setter Property="Canvas.Left" Value="{ReflectionBinding X}" />
+                                    <Setter Property="Canvas.Top" Value="{ReflectionBinding Y}" />
+                                </Style>
+                            </ItemsControl.Styles>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:MapPreviewPointViewModel">
+                                    <Ellipse Width="8"
+                                             Height="8"
+                                             Fill="{Binding MarkerBrush}"
+                                             Stroke="White"
+                                             StrokeThickness="1"
+                                             ToolTip.Tip="{Binding HoverDetails}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Canvas>
+                </Border>
+
+                <Border HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        Margin="14"
+                        Background="#B312243A"
+                        BorderBrush="#66FFFFFF"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="10,8"
+                        Opacity="0.82">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Legend"
+                                   Foreground="White"
+                                   FontWeight="SemiBold"
+                                   FontSize="12" />
+
+                        <CheckBox IsChecked="{Binding ShowPerformanceOverlay, Mode=TwoWay}"
+                                  Foreground="White"
+                                  Content="Perf telemetry" />
+
+                        <TextBlock IsVisible="{Binding IsPerformanceOverlayVisible}"
+                                   Text="{Binding PerformanceOverlay}"
+                                   Foreground="White"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="420" />
+                    </StackPanel>
+                </Border>
+
+                <Border HorizontalAlignment="Center"
+                        VerticalAlignment="Top"
+                        Margin="14"
+                        Background="#B312243A"
+                        BorderBrush="#66FFFFFF"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="10,8"
+                        MaxWidth="760"
+                        IsVisible="{Binding ShowLoadPerformanceNotice}">
+                    <TextBlock Text="This may take a few moments and may be slow for large address lists/PCs with low GPU specs"
+                               Foreground="White"
+                               FontSize="12"
+                               TextWrapping="Wrap" />
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
+

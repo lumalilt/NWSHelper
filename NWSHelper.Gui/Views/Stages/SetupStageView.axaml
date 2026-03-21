@@ -1,0 +1,402 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:NWSHelper.Gui.ViewModels"
+             xmlns:services="using:NWSHelper.Gui.Services"
+             xmlns:stages="using:NWSHelper.Gui.Views.Stages"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Name="Root"
+             x:Class="NWSHelper.Gui.Views.Stages.SetupStageView"
+             x:CompileBindings="False"
+             x:DataType="vm:MainWindowViewModel">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.info-marker">
+            <Setter Property="Text" Value="ⓘ" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Opacity" Value="0.75" />
+        </Style>
+
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="*,Auto" RowSpacing="0">
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0">
+            <StackPanel Spacing="16">
+                <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Setup Inputs" FontSize="20" FontWeight="SemiBold" />
+                        <Grid ColumnDefinitions="240,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
+                            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Territories CSV *" />
+                                <TextBlock Classes="info-marker" ToolTip.Tip="Required territories boundary CSV file to find new addresses inside of." />
+                            </StackPanel>
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding BoundaryCsvPath, Mode=TwoWay}" Watermark="Path to territories CSV" />
+                            <Button x:Name="BoundaryCsvBrowseButton" Grid.Row="0" Grid.Column="2" Content="Browse..." Click="OnBrowseBoundaryCsvClick" ToolTip.Tip="Browse for territories CSV file" />
+
+                            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Existing Territory Addresses CSV" />
+                                <TextBlock Classes="info-marker" ToolTip.Tip="Optional pre-existing territory addresses CSV to merge new adddresses with and to update with location data. Highly recommended to add file Export Territory Addresses here to preserve existing address statuses like DNC, etc." />
+                            </StackPanel>
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ExistingAddressesCsvPath, Mode=TwoWay}" Watermark="Optional path. Highly recommended to add file Export Territory Addresses here to preserve existing address statuses like DNC, etc." />
+                            <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Click="OnBrowseExistingCsvClick" ToolTip.Tip="Browse for existing territory addresses CSV file" />
+
+                            <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="New Addresses Dataset Provider *" />
+                                <TextBlock Classes="info-marker" ToolTip.Tip="Dataset provider used for listing/downloading datasets of new addresses to add." />
+                            </StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ComboBox Width="260"
+                                              SelectedValue="{Binding SelectedDatasetProviderId, Mode=TwoWay}"
+                                              ItemsSource="{Binding DatasetProviders}">
+                                        <ComboBox.SelectedValueBinding>
+                                            <Binding Path="Id" />
+                                        </ComboBox.SelectedValueBinding>
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="services:DatasetProviderOption">
+                                                <TextBlock Text="{Binding DisplayName}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+
+                                    <Button x:Name="DatasetSelectorButton" Content="Select Datasets..." Click="OnOpenDatasetSelectorClick" ToolTip.Tip="Choose provider datasets to download">
+                                        <Button.Flyout>
+                                            <Flyout Placement="Bottom" ShowMode="Standard" Closed="OnDatasetSelectionFlyoutClosed">
+                                                <Border Width="400"
+                                                        MaxHeight="420"
+                                                        Background="{DynamicResource CardBackgroundBrush}"
+                                                        BorderBrush="{DynamicResource CardBorderBrush}"
+                                                        BorderThickness="1"
+                                                        Padding="10">
+                                                    <StackPanel Spacing="8">
+                                                        <TextBlock Text="Select provider datasets to download" FontWeight="SemiBold" />
+                                                        <TextBlock Text="Click Download or close this flyout to start downloading selected datasets."
+                                                                   FontSize="11"
+                                                                   Opacity="0.8" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <Button Content="All" Click="OnSelectAllDatasetsClick" ToolTip.Tip="Select all datasets" />
+                                                            <Button Content="None" Click="OnClearDatasetsSelectionClick" ToolTip.Tip="Clear dataset selection" />
+                                                            <Button Content="Download" Click="OnApplyDatasetSelectionClick" ToolTip.Tip="Download selected datasets" />
+                                                        </StackPanel>
+                                                        <ScrollViewer VerticalScrollBarVisibility="Visible"
+                                                                      HorizontalScrollBarVisibility="Disabled"
+                                                                      MaxHeight="320"
+                                                                      Width="380"
+                                                                      HorizontalAlignment="Left">
+                                                            <TreeView x:Name="DatasetSelectionTree"
+                                                                      ItemsSource="{Binding DatasetSelectionNodes, ElementName=Root}"
+                                                                      AutoScrollToSelectedItem="False"
+                                                                      Focusable="False"
+                                                                      IsTabStop="False"
+                                                                      Width="380"
+                                                                      HorizontalAlignment="Left"
+                                                                      x:CompileBindings="False">
+                                                                <TreeView.ItemTemplate>
+                                                                    <TreeDataTemplate x:DataType="stages:SetupStageView+DatasetSelectionNode"
+                                                                                      ItemsSource="{Binding Children}">
+                                                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                                  Content="{Binding Label}" />
+                                                                    </TreeDataTemplate>
+                                                                </TreeView.ItemTemplate>
+                                                            </TreeView>
+                                                        </ScrollViewer>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+
+                                </StackPanel>
+
+                                <ProgressBar Minimum="0"
+                                             Maximum="100"
+                                             Height="4"
+                                             IsVisible="{Binding IsDatasetDownloadInProgress}"
+                                             Value="{Binding DatasetDownloadPercent}" />
+                                <TextBlock FontSize="11"
+                                           Opacity="0.8"
+                                           IsVisible="{Binding HasDatasetDownloadMessage}"
+                                           Text="{Binding DatasetDownloadMessage}" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Dataset Root *" />
+                                <TextBlock Classes="info-marker" ToolTip.Tip="Required folder that contains datasets for the selected provider." />
+                            </StackPanel>
+                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding DatasetRootPath, Mode=TwoWay}" />
+                            <Button Grid.Row="3" Grid.Column="2" Content="Browse..." Click="OnBrowseDatasetRootClick" ToolTip.Tip="Browse for dataset root folder" />
+
+                            <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="States/Counties to Use" />
+                                <TextBlock Classes="info-marker" ToolTip.Tip="Comma-separated state or state:county filters for new address CSV files to use for adding addresses (example: MD, MD:baltimore_county)." />
+                            </StackPanel>
+                            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding StatesFilter, Mode=TwoWay}" />
+                                <Button x:Name="StatesFilterSelectorButton"
+                                    Grid.Row="4"
+                                    Grid.Column="2"
+                                    Width="{Binding ElementName=BoundaryCsvBrowseButton, Path=Bounds.Width}"
+                                    Content="Select..."
+                                    Click="OnOpenStatesFilterSelectorClick"
+                                    ToolTip.Tip="Select states and counties from dataset root">
+                                <Button.Flyout>
+                                    <Flyout Placement="Bottom" ShowMode="Standard" Closed="OnStatesFilterFlyoutClosed">
+                                        <Border Width="420"
+                                                MaxHeight="380"
+                                                Background="{DynamicResource CardBackgroundBrush}"
+                                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                                BorderThickness="1"
+                                                Padding="10">
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Text="Select states/counties from dataset root" FontWeight="SemiBold" />
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <Button Content="All" Click="OnSelectAllStatesFilterSelectionClick" ToolTip.Tip="Select all states and counties" />
+                                                    <Button Content="None" Click="OnClearStatesFilterSelectionClick" ToolTip.Tip="Clear state and county selection" />
+                                                    <Button Content="Apply" Click="OnApplyStatesFilterSelectionClick" ToolTip.Tip="Apply state and county selection" />
+                                                </StackPanel>
+                                                <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled" MaxHeight="300">
+                                                    <TreeView x:Name="StateFilterTree"
+                                                              ItemsSource="{Binding StateFilterNodes, ElementName=Root}"
+                                                              AutoScrollToSelectedItem="False"
+                                                              Focusable="False"
+                                                              IsTabStop="False"
+                                                              x:CompileBindings="False">
+                                                        <TreeView.ItemTemplate>
+                                                            <TreeDataTemplate x:DataType="stages:SetupStageView+StateFilterNode"
+                                                                              ItemsSource="{Binding Children}">
+                                                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                          Content="{Binding Label}" />
+                                                            </TreeDataTemplate>
+                                                        </TreeView.ItemTemplate>
+                                                    </TreeView>
+                                                </ScrollViewer>
+                                            </StackPanel>
+                                        </Border>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Expander IsExpanded="{Binding IsOptionsExpanded, Mode=TwoWay}">
+                    <Expander.Header>
+                        <TextBlock Text="Options" FontSize="20" FontWeight="SemiBold" />
+                    </Expander.Header>
+                    <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
+                        <StackPanel Spacing="12">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Basic" FontSize="16" FontWeight="SemiBold" />
+                                <Grid ColumnDefinitions="240,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Apt units smart-fill mode" />
+                                        <TextBlock Classes="info-marker" ToolTip.Tip="Generate missing apartment/unit rows from unit-populated rows. Controls which rows are sources/targets for apartment-unit smart-fill." />
+                                    </StackPanel>
+                                    <ComboBox Grid.Row="0"
+                                              Grid.Column="1"
+                                              Width="220"
+                                              HorizontalAlignment="Left"
+                                              ItemsSource="{Binding SmartFillModes}"
+                                              SelectedItem="{Binding SelectedSmartFillMode, Mode=TwoWay}" />
+
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Warning Threshold" />
+                                        <TextBlock Classes="info-marker" ToolTip.Tip="Territory totals at or above this value are flagged as warnings due to other application limitations (number of addresses allowed per territory)." />
+                                    </StackPanel>
+                                    <NumericUpDown Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="500" Value="{Binding WarningThreshold, Mode=TwoWay}" />
+
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Split Output Files Size" />
+                                        <TextBlock Classes="info-marker" ToolTip.Tip="Provide split files of consolidated (all territories together) output after this many rows (0 disables splitting)." />
+                                    </StackPanel>
+                                    <NumericUpDown Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100000" Value="{Binding OutputSplitRows, Mode=TwoWay}" />
+
+                                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Alternative Output Folder" />
+                                        <TextBlock Classes="info-marker" ToolTip.Tip="Optional folder for all output files (consolidated, split, category, and per-territory when enabled). If empty, outputs are written under NWSHelper-Output next to the territories CSV file." />
+                                    </StackPanel>
+                                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ConsolidatedOutputPath, Mode=TwoWay}" Watermark="Optional folder. Defaults to NWSHelper-Output next to territories CSV" />
+                                    <Button Grid.Row="3" Grid.Column="2" Content="Browse..." Click="OnBrowseConsolidatedOutputClick" ToolTip.Tip="Browse for output folder" />
+                                </Grid>
+
+                                <WrapPanel Orientation="Horizontal">
+                                    <WrapPanel.Styles>
+                                        <Style Selector="CheckBox">
+                                            <Setter Property="Margin" Value="0,0,16,8" />
+                                        </Style>
+                                    </WrapPanel.Styles>
+                                    <CheckBox IsChecked="{Binding OutputDespiteThreshold, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Output despite threshold" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Write outputs even when warning threshold is exceeded." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding WhatIf, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="What-if mode" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Run extraction and preview full results without writing files." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding ListThresholdExceeding, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="List threshold-exceeding" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Show the territories that exceed warning threshold." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding PerTerritoryOutput, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Per-territory output" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Write one output CSV per selected territory." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding GroupByCategory, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Group by category" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Write additional output files grouped by address category." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding NoPrompt, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Don't require all existing" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Run despite territory/ies w/o existing addresses in input" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding SmartSelect, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Smart-select defaults" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Auto-select non-warning territories in preview." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding SelectAll, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Select all" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Preselect all territories when preview is built." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                </WrapPanel>
+                            </StackPanel>
+
+                            <Separator Margin="0,6" Opacity="0.6" />
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Advanced" FontSize="16" FontWeight="SemiBold" />
+                                <WrapPanel Orientation="Horizontal">
+                                    <WrapPanel.Styles>
+                                        <Style Selector="CheckBox">
+                                            <Setter Property="Margin" Value="0,0,20,8" />
+                                        </Style>
+                                    </WrapPanel.Styles>
+                                    <CheckBox IsChecked="{Binding OutputExistingNoneNew, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Output existing none-new" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Write output for territories that have no new rows." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding NoneNewInConsolidated, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="None-new in consolidated" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Include none-new territories in consolidated output." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding OutputAllRows, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Output all rows" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Write all merged rows instead of delta-only rows." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding ExcludeNormalizedRows, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Exclude normalized-only rows" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Exclude rows changed only by normalization." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding OverwriteExistingLatLong, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Overwrite existing lat/long" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Allow dataset coordinates to overwrite existing coordinates." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding OnlyMatchSingleState, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Only match single state" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Restrict fallback matching to one state." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding OnlyMatchSingleCounty, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Only match single county" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Restrict fallback matching to one county." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding PreserveRawState, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Preserve raw state" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Do not normalize state values." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding PreserveRawStreet, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Preserve raw street" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Do not normalize street values." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding ForceWithoutAddressInput, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Force without address input" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Allow extraction even when pre-existing address input is missing." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                </WrapPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Expander>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="1" Padding="0" Margin="0,6,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Command="{Binding BuildPreviewCommand}" Content="Build Preview" ToolTip.Tip="Build preview from current setup [Ctrl+Enter]" />
+                <Button Command="{Binding RunExtractionWithDefaultsCommand}" Content="Run Extraction" ToolTip.Tip="Build preview and run extraction with defaults [Alt+Enter]" />
+                <Separator Margin="4,0" Width="1" />
+
+                <Button IsVisible="{Binding HasMapTerritorySelections}"
+                        Width="260"
+                        HorizontalContentAlignment="Left"
+                        Content="{Binding MapTerritorySelectionSummary}"
+                        ToolTip.Tip="Select existing terrritory/ies to map">
+                    <Button.Flyout>
+                        <Flyout Placement="Bottom" ShowMode="Standard">
+                            <StackPanel Spacing="8" Margin="0,8,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Command="{Binding SelectAllMapTerritoriesCommand}" Content="All" ToolTip.Tip="Select all map territories" />
+                                    <Button Command="{Binding ClearMapTerritorySelectionCommand}" Content="None" ToolTip.Tip="Clear map territory selection" />
+                                </StackPanel>
+
+                                <ScrollViewer MaxHeight="260" Width="360" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl ItemsSource="{Binding MapTerritorySelections}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:MapTerritorySelectionItemViewModel">
+                                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                          Content="{Binding DisplayLabel}"
+                                                          Margin="0,0,0,4" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+
+                <Button Command="{Binding OpenInputMapCommand}"
+                        Content="Map Selected"
+                        ToolTip.Tip="Open map preview for selected existing territories (requires Existing Addresses CSV; may be slow for large address lists/PCs with low GPU specs) [Ctrl+M]" />
+                <TextBlock IsVisible="{Binding IsBusy}" VerticalAlignment="Center" Text="Working..." />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

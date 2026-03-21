@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="NWSHelper.Cli/NWSHelper.Cli.csproj" />
+  <Project Path="NWSHelper.Gui/NWSHelper.Gui.csproj" />
+  <Project Path="NWSHelper.Public.Tests/NWSHelper.Public.Tests.csproj" />
+</Solution>

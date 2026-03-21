@@ -1,0 +1,107 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:NWSHelper.Gui.ViewModels"
+    xmlns:stages="using:NWSHelper.Gui.Views.Stages"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d" d:DesignWidth="1440" d:DesignHeight="900"
+        x:Class="NWSHelper.Gui.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/nwsh_multi.ico"
+    Title="NWS Helper">
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Enter" Command="{Binding ExecutePrimaryActionCommand}" />
+        <KeyBinding Gesture="Ctrl+G" Command="{Binding GoToSettingsCommand}" />
+        <KeyBinding Gesture="Ctrl+M" Command="{Binding OpenInputMapCommand}" />
+        <KeyBinding Gesture="Alt+Enter" Command="{Binding RunExtractionWithDefaultsCommand}" />
+        <KeyBinding Gesture="Alt+Left" Command="{Binding GoToPreviousStageCommand}" />
+        <KeyBinding Gesture="Alt+Right" Command="{Binding GoToNextStageCommand}" />
+        <KeyBinding Gesture="Escape" Command="{Binding CancelRunCommand}" />
+    </Window.KeyBindings>
+
+    <Window.Styles>
+        <Style Selector="Button.stage-nav">
+            <Setter Property="Padding" Value="12,6" />
+        </Style>
+
+        <Style Selector="Button.stage-nav.active">
+            <Setter Property="Background" Value="{DynamicResource StageNavActiveBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource StageNavActiveForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource StageNavActiveBackgroundBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <Border Grid.Row="0" Background="{DynamicResource ShellHeaderBackgroundBrush}" Padding="16">
+            <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                <Button Grid.Column="1"
+                        Command="{Binding GoToSettingsCommand}"
+                        ToolTip.Tip="Settings [Ctrl+G]"
+                        Background="Transparent"
+                        BorderBrush="{DynamicResource ShellHeaderSubtitleForegroundBrush}"
+                        BorderThickness="1"
+                        Padding="8"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center">
+                    <Path Data="M2,4 L14,4 M2,8 L14,8 M2,12 L14,12"
+                          Stroke="{DynamicResource ShellHeaderSubtitleForegroundBrush}"
+                          StrokeThickness="1.6"
+                          Width="16"
+                          Height="16"
+                          Stretch="Uniform" />
+                </Button>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Background="{DynamicResource StageNavBackgroundBrush}" Padding="12,10">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Classes.stage-nav="True" Classes.active="{Binding IsSetupStage}" Content="Setup" Command="{Binding GoToSetupCommand}" ToolTip.Tip="Go to Setup stage" />
+                <TextBlock VerticalAlignment="Center" Text="→" />
+                <Button Classes.stage-nav="True" Classes.active="{Binding IsPreviewStage}" Content="Preview" Command="{Binding GoToPreviewCommand}" ToolTip.Tip="Go to Preview stage" />
+                <TextBlock VerticalAlignment="Center" Text="→" />
+                <Button Classes.stage-nav="True" Classes.active="{Binding IsRunStage}" Content="Run" Command="{Binding GoToRunCommand}" ToolTip.Tip="Go to Run stage" />
+                <TextBlock VerticalAlignment="Center" Text="→" />
+                <Button Classes.stage-nav="True" Classes.active="{Binding IsResultsStage}" Content="Results" Command="{Binding GoToResultsCommand}" ToolTip.Tip="Go to Results stage" />
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Border IsVisible="{Binding IsSetupStage}" Padding="16">
+                <stages:SetupStageView DataContext="{Binding}" />
+            </Border>
+
+            <Border IsVisible="{Binding IsPreviewStage}" Padding="16">
+                <stages:PreviewStageView DataContext="{Binding}" />
+            </Border>
+
+            <ScrollViewer IsVisible="{Binding IsRunStage}" Padding="16,16,16,48" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <stages:RunStageView DataContext="{Binding}" />
+            </ScrollViewer>
+
+            <Border IsVisible="{Binding IsResultsStage}" Padding="16">
+                <stages:ResultsStageView DataContext="{Binding}" />
+            </Border>
+
+            <Border IsVisible="{Binding IsSettingsStage}" Padding="16">
+                <stages:SettingsStageView DataContext="{Binding}" />
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="3"
+                Background="{DynamicResource StageNavBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,8">
+            <TextBlock Text="{Binding StatusLine}" TextTrimming="CharacterEllipsis" />
+        </Border>
+    </Grid>
+
+</Window>
+

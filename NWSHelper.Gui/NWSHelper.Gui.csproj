@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <UseCorePackageReference Condition="'$(UseCorePackageReference)' == ''">true</UseCorePackageReference>
+    <CorePackageVersion Condition="'$(CorePackageVersion)' == ''">$(Version)</CorePackageVersion>
+    <CorePackageSource Condition="'$(CorePackageSource)' == ''"></CorePackageSource>
+    <RestoreAdditionalProjectSources Condition="'$(UseCorePackageReference)' == 'true' and '$(CorePackageSource)' != '' and Exists('$(CorePackageSource)')">$(RestoreAdditionalProjectSources);$(CorePackageSource)</RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'windows'">
+    <Compile Remove="Services\StoreOwnershipVerifier.Windows.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Models\" />
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
+    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.0-beta2" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
+    <PackageReference Include="NetSparkleUpdater.SparkleUpdater" Version="3.0.4" />
+    <PackageReference Include="WebViewControl-Avalonia" Version="3.120.11" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseCorePackageReference)' == 'true'">
+    <PackageReference Include="NWSHelper.Core" Version="$(CorePackageVersion)" />
+  </ItemGroup>
+
+  <Target Name="ValidateCorePackageReferenceSettings" BeforeTargets="Restore" Condition="'$(UseCorePackageReference)' == 'true' and '$(CorePackageSource)' != ''">
+    <Error Condition="!Exists('$(CorePackageSource)')" Text="Core package source not found: $(CorePackageSource)" />
+  </Target>
+</Project>
+
