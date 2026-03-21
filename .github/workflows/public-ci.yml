@@ -23,3 +23,21 @@ jobs:
 
       - name: Run public-safe tests
         run: dotnet test .\NWSHelper.Public.Tests\NWSHelper.Public.Tests.csproj --configuration Release --nologo
+
+  public-solution-build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore public solution from configured feeds
+        run: dotnet restore .\NWSHelper.Public.slnx --nologo
+
+      - name: Build public solution
+        run: dotnet build .\NWSHelper.Public.slnx --configuration Release --no-restore --nologo
