@@ -16,6 +16,32 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-FileSha256Hex {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $stream = $null
+    $hasher = $null
+
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        $hasher = [System.Security.Cryptography.SHA256]::Create()
+        $hashBytes = $hasher.ComputeHash($stream)
+        return ([System.BitConverter]::ToString($hashBytes)).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        if ($hasher) {
+            $hasher.Dispose()
+        }
+
+        if ($stream) {
+            $stream.Dispose()
+        }
+    }
+}
+
 function Resolve-ExistingDirectory {
     param(
         [Parameter(Mandatory = $true)]
@@ -110,7 +136,7 @@ $generatedAt = Resolve-GeneratedAtUtc -Value $GeneratedAtUtc
 
 $entries = foreach ($file in $files) {
     $relativePath = Get-RelativePath -BasePath $resolvedArtifactsPath -Path $file.FullName
-    $sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha256 = Get-FileSha256Hex -Path $file.FullName
     $downloadUrl = Get-DownloadUrl -Base $BaseDownloadUrl -RelativePath $relativePath
 
     $entry = [ordered]@{

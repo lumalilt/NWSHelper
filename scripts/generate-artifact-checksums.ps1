@@ -14,6 +14,42 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-FileHashHex {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$AlgorithmName
+    )
+
+    $stream = $null
+    $hasher = $null
+
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+
+        switch ($AlgorithmName.ToUpperInvariant()) {
+            'SHA256' { $hasher = [System.Security.Cryptography.SHA256]::Create(); break }
+            'SHA384' { $hasher = [System.Security.Cryptography.SHA384]::Create(); break }
+            'SHA512' { $hasher = [System.Security.Cryptography.SHA512]::Create(); break }
+            'MD5' { $hasher = [System.Security.Cryptography.MD5]::Create(); break }
+            default { throw "Unsupported hash algorithm '$AlgorithmName'." }
+        }
+
+        $hashBytes = $hasher.ComputeHash($stream)
+        return ([System.BitConverter]::ToString($hashBytes)).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        if ($hasher) {
+            $hasher.Dispose()
+        }
+
+        if ($stream) {
+            $stream.Dispose()
+        }
+    }
+}
+
 function Resolve-ExistingDirectory {
     param(
         [Parameter(Mandatory = $true)]
@@ -77,7 +113,7 @@ if ($files.Count -eq 0) {
 }
 
 $lines = foreach ($file in $files) {
-    $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm $Algorithm).Hash.ToLowerInvariant()
+    $hash = Get-FileHashHex -Path $file.FullName -AlgorithmName $Algorithm
     $relativePath = Get-RelativePath -BasePath $resolvedArtifactsPath -Path $file.FullName
     "$hash *$relativePath"
 }
