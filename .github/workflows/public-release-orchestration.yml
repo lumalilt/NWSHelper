@@ -1,0 +1,762 @@
+name: public-release-orchestration
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_release_bundle:
+        description: Build the signed public release bundle without publishing a GitHub Release
+        required: false
+        default: 'false'
+      enable_github_release_publish:
+        description: Publish the built bundle to a GitHub Release during workflow_dispatch
+        required: false
+        default: 'false'
+      publish_github_release_as_prerelease:
+        description: Mark the GitHub Release as a prerelease during workflow_dispatch
+        required: false
+        default: 'false'
+      prepare_store_publish:
+        description: Stage production Store submission artifacts and run local identity validation during workflow_dispatch
+        required: false
+        default: 'false'
+      submit_store_publish:
+        description: Submit the prepared production Store package to Partner Center during workflow_dispatch
+        required: false
+        default: 'false'
+      force_replace_pending_store_submission:
+        description: Replace an existing pending production Store submission when submit_store_publish=true
+        required: false
+        default: 'false'
+  workflow_run:
+    workflows:
+      - public-ci
+    types:
+      - completed
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: public-release-orchestration-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  release-gate:
+    runs-on: windows-latest
+    outputs:
+      source_sha: ${{ steps.evaluate.outputs.source_sha }}
+      release_tag: ${{ steps.evaluate.outputs.release_tag }}
+      should_package_bundle: ${{ steps.evaluate.outputs.should_package_bundle }}
+      should_publish_github_release: ${{ steps.evaluate.outputs.should_publish_github_release }}
+      should_prepare_store: ${{ steps.evaluate.outputs.should_prepare_store }}
+      should_submit_store: ${{ steps.evaluate.outputs.should_submit_store }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Evaluate release eligibility
+        id: evaluate
+        shell: pwsh
+        run: |
+          function Set-ActionOutput([string]$name, [string]$value) {
+            "$name=$value" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+          function Get-WorkflowRunsForSha([string]$workflowFileName, [string]$sourceSha) {
+            $response = gh api "repos/$env:GH_REPO/actions/workflows/$workflowFileName/runs?event=push&per_page=100"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Unable to query workflow runs for $workflowFileName."
+            }
+
+            return @((ConvertFrom-Json $response).workflow_runs | Where-Object { $_.head_sha -eq $sourceSha })
+          }
+
+          function Test-HasSuccessfulRun($runs) {
+            return @($runs | Where-Object { $_.status -eq 'completed' -and $_.conclusion -eq 'success' }).Count -gt 0
+          }
+
+          function Test-HasRunningRun($runs) {
+            return @($runs | Where-Object { $_.status -ne 'completed' }).Count -gt 0
+          }
+
+          function Test-HasFailedRun($runs) {
+            return @($runs | Where-Object { $_.status -eq 'completed' -and $_.conclusion -ne 'success' }).Count -gt 0
+          }
+
+          $eventName = $env:GITHUB_EVENT_NAME
+          $manualBuildBundle = '${{ inputs.build_release_bundle }}' -eq 'true'
+          $manualRelease = '${{ inputs.enable_github_release_publish }}' -eq 'true'
+          $manualStorePrepare = '${{ inputs.prepare_store_publish }}' -eq 'true'
+          $manualStoreSubmit = '${{ inputs.submit_store_publish }}' -eq 'true'
+
+          $sourceSha = ''
+          $releaseTag = ''
+          $shouldPackageBundle = $false
+          $shouldPublishGitHubRelease = $false
+          $shouldPrepareStore = $false
+          $shouldSubmitStore = $false
+
+          switch ($eventName) {
+            'push' {
+              if ($env:GITHUB_REF -notlike 'refs/tags/v*') {
+                Write-Host 'Skipping release: push event was not a version tag.'
+                break
+              }
+
+              if ('${{ github.ref_protected }}' -ne 'true') {
+                throw 'Version tag pushes must come from a protected ref before release packaging can run.'
+              }
+
+              $sourceSha = $env:GITHUB_SHA
+              $releaseTag = $env:GITHUB_REF.Substring('refs/tags/'.Length)
+            }
+            'workflow_run' {
+              if ('${{ github.event.workflow_run.conclusion }}' -ne 'success') {
+                Write-Host "Skipping release: upstream workflow concluded with ${{ github.event.workflow_run.conclusion }}."
+                break
+              }
+
+              $sourceSha = '${{ github.event.workflow_run.head_sha }}'
+              $tagResponse = gh api "repos/$env:GH_REPO/tags?per_page=100"
+              if ($LASTEXITCODE -ne 0) {
+                throw 'Unable to query repository tags for release gating.'
+              }
+
+              $matchingTags = @(($tagResponse | ConvertFrom-Json) | Where-Object { $_.name -like 'v*' -and $_.commit.sha -eq $sourceSha } | Sort-Object name -Descending)
+              if ($matchingTags.Count -eq 0) {
+                Write-Host "Skipping release: no version tag currently points at SHA $sourceSha."
+                break
+              }
+
+              if ($matchingTags.Count -gt 1) {
+                $tagNames = ($matchingTags | Select-Object -ExpandProperty name) -join ', '
+                throw "Multiple version tags point at SHA ${sourceSha}: $tagNames"
+              }
+
+              $releaseTag = $matchingTags[0].name
+            }
+            'workflow_dispatch' {
+              $sourceSha = $env:GITHUB_SHA
+              if ($env:GITHUB_REF -like 'refs/tags/v*') {
+                $releaseTag = $env:GITHUB_REF.Substring('refs/tags/'.Length)
+              }
+
+              if ('${{ github.ref_protected }}' -ne 'true') {
+                throw 'Manual public release operations must run from a protected ref.'
+              }
+
+              $shouldPublishGitHubRelease = $manualRelease
+              $shouldPrepareStore = $manualStorePrepare -or $manualStoreSubmit
+              $shouldSubmitStore = $manualStoreSubmit
+              $shouldPackageBundle = $manualBuildBundle -or $manualRelease -or $manualStorePrepare -or $manualStoreSubmit
+
+              if (($manualRelease -or $manualStorePrepare -or $manualStoreSubmit) -and [string]::IsNullOrWhiteSpace($releaseTag)) {
+                throw 'Manual GitHub Release and Store operations must run from a v* tag ref.'
+              }
+
+              if ($shouldPackageBundle) {
+                Write-Host "Manual dispatch requested release operations for SHA $sourceSha."
+              }
+              else {
+                Write-Host 'Manual dispatch did not enable any release operations.'
+              }
+            }
+            default {
+              throw "Unsupported release trigger event '$eventName'."
+            }
+          }
+
+          if (($eventName -eq 'push' -or $eventName -eq 'workflow_run') -and -not [string]::IsNullOrWhiteSpace($releaseTag)) {
+            gh release view $releaseTag --repo $env:GH_REPO *> $null
+            $releaseExists = $LASTEXITCODE -eq 0
+            if ($releaseExists) {
+              Write-Host "Skipping release: $releaseTag already exists in $env:GH_REPO."
+            }
+            else {
+              $ciRuns = Get-WorkflowRunsForSha 'public-ci.yml' $sourceSha
+
+              $ciSucceeded = Test-HasSuccessfulRun $ciRuns
+              $ciRunning = Test-HasRunningRun $ciRuns
+              $ciFailed = Test-HasFailedRun $ciRuns
+
+              if ($ciFailed -and -not $ciSucceeded) {
+                throw "public-ci failed for SHA $sourceSha."
+              }
+
+              if ($ciRunning) {
+                Write-Host "Skipping release for ${releaseTag}: public-ci is still running for SHA $sourceSha."
+              }
+              elseif (-not $ciSucceeded) {
+                Write-Host "Skipping release for ${releaseTag}: required successful public-ci for SHA $sourceSha is not available yet."
+              }
+              else {
+                $shouldPublishGitHubRelease = $true
+                $shouldPackageBundle = $true
+                Write-Host "Release is eligible for tag $releaseTag on SHA $sourceSha."
+              }
+            }
+          }
+
+          Set-ActionOutput 'source_sha' $sourceSha
+          Set-ActionOutput 'release_tag' $releaseTag
+          Set-ActionOutput 'should_package_bundle' ([string]$shouldPackageBundle).ToLowerInvariant()
+          Set-ActionOutput 'should_publish_github_release' ([string]$shouldPublishGitHubRelease).ToLowerInvariant()
+          Set-ActionOutput 'should_prepare_store' ([string]$shouldPrepareStore).ToLowerInvariant()
+          Set-ActionOutput 'should_submit_store' ([string]$shouldSubmitStore).ToLowerInvariant()
+
+  build-package-bundle:
+    needs: release-gate
+    if: ${{ needs.release-gate.outputs.should_package_bundle == 'true' }}
+    runs-on: windows-latest
+    environment:
+      name: ${{ 'public-release' }}
+    outputs:
+      version: ${{ steps.compute.outputs.Version }}
+      file_version: ${{ steps.compute.outputs.FileVersion }}
+      informational_version: ${{ steps.compute.outputs.InformationalVersion }}
+      is_prerelease: ${{ steps.release-channel.outputs.is_prerelease }}
+      artifact_name: ${{ steps.bundle-metadata.outputs.artifact_name }}
+    env:
+      GUI_TARGET_FRAMEWORK: net10.0-windows10.0.19041.0
+      MSIX_PACKAGE_IDENTITY_NAME: ${{ vars.MSIX_PACKAGE_IDENTITY_NAME }}
+      MSIX_PACKAGE_DISPLAY_NAME: ${{ vars.MSIX_PACKAGE_DISPLAY_NAME }}
+      MSIX_PACKAGE_PUBLISHER: ${{ vars.MSIX_PACKAGE_PUBLISHER }}
+      MSIX_PACKAGE_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PACKAGE_PUBLISHER_DISPLAY_NAME }}
+      MSIX_PACKAGE_DESCRIPTION: ${{ vars.MSIX_PACKAGE_DESCRIPTION }}
+      MSIX_SIGNING_TIMESTAMP_URL: ${{ vars.MSIX_SIGNING_TIMESTAMP_URL }}
+      RELEASE_TAG: ${{ needs.release-gate.outputs.release_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-gate.outputs.source_sha }}
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Compute version metadata
+        id: compute
+        shell: pwsh
+        run: ./scripts/compute-version.ps1
+
+      - name: Determine release channel
+        id: release-channel
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.release-gate.outputs.release_tag }}
+        run: |
+          $isTagPrerelease = -not [string]::IsNullOrWhiteSpace($env:RELEASE_TAG) -and $env:RELEASE_TAG.Contains('-')
+          $isManualPrerelease = '${{ inputs.publish_github_release_as_prerelease }}' -eq 'true'
+          $isPrerelease = $isTagPrerelease -or $isManualPrerelease
+          "is_prerelease=$(([string]$isPrerelease).ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Validate release signing configuration
+        shell: pwsh
+        env:
+          MSIX_SIGNING_CERTIFICATE_BASE64: ${{ secrets.MSIX_SIGNING_CERTIFICATE_BASE64 }}
+          MSIX_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_SIGNING_CERTIFICATE_PASSWORD }}
+          NWSHELPER_APPCAST_SIGNING_KEY: ${{ secrets.NWSHELPER_APPCAST_SIGNING_KEY }}
+        run: |
+          foreach ($requiredName in @(
+            'MSIX_PACKAGE_IDENTITY_NAME',
+            'MSIX_PACKAGE_PUBLISHER',
+            'MSIX_SIGNING_CERTIFICATE_BASE64',
+            'MSIX_SIGNING_CERTIFICATE_PASSWORD',
+            'NWSHELPER_APPCAST_SIGNING_KEY'
+          )) {
+            $requiredValue = [Environment]::GetEnvironmentVariable($requiredName)
+            if ([string]::IsNullOrWhiteSpace($requiredValue)) {
+              throw "Required public-release value '$requiredName' is missing. Configure the protected public-release environment first."
+            }
+          }
+
+      - name: Restore public solution
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          FILE_VERSION: ${{ steps.compute.outputs.FileVersion }}
+          INFORMATIONAL_VERSION: ${{ steps.compute.outputs.InformationalVersion }}
+        run: >
+          dotnet restore NWSHelper.Public.slnx --nologo
+          /p:Version=$env:VERSION
+          /p:FileVersion=$env:FILE_VERSION
+          /p:InformationalVersion=$env:INFORMATIONAL_VERSION
+
+      - name: Restore GUI runtime assets
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          FILE_VERSION: ${{ steps.compute.outputs.FileVersion }}
+          INFORMATIONAL_VERSION: ${{ steps.compute.outputs.InformationalVersion }}
+        run: >
+          dotnet restore NWSHelper.Gui/NWSHelper.Gui.csproj --runtime win-x64 --nologo
+          /p:Version=$env:VERSION
+          /p:FileVersion=$env:FILE_VERSION
+          /p:InformationalVersion=$env:INFORMATIONAL_VERSION
+
+      - name: Restore CLI runtime assets
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          FILE_VERSION: ${{ steps.compute.outputs.FileVersion }}
+          INFORMATIONAL_VERSION: ${{ steps.compute.outputs.InformationalVersion }}
+        run: >
+          dotnet restore NWSHelper.Cli/NWSHelper.Cli.csproj --runtime win-x64 --nologo
+          /p:Version=$env:VERSION
+          /p:FileVersion=$env:FILE_VERSION
+          /p:InformationalVersion=$env:INFORMATIONAL_VERSION
+
+      - name: Publish GUI
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          FILE_VERSION: ${{ steps.compute.outputs.FileVersion }}
+          INFORMATIONAL_VERSION: ${{ steps.compute.outputs.InformationalVersion }}
+          GUI_PUBLISH_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/publish/gui-win-x64
+        run: >
+          dotnet publish NWSHelper.Gui/NWSHelper.Gui.csproj --configuration Release --framework $env:GUI_TARGET_FRAMEWORK --runtime win-x64 --self-contained true --no-restore
+          --output $env:GUI_PUBLISH_DIR
+          /p:Version=$env:VERSION
+          /p:FileVersion=$env:FILE_VERSION
+          /p:InformationalVersion=$env:INFORMATIONAL_VERSION
+
+      - name: Publish CLI
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          FILE_VERSION: ${{ steps.compute.outputs.FileVersion }}
+          INFORMATIONAL_VERSION: ${{ steps.compute.outputs.InformationalVersion }}
+          CLI_PUBLISH_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/publish/cli-win-x64
+        run: >
+          dotnet publish NWSHelper.Cli/NWSHelper.Cli.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore
+          --output $env:CLI_PUBLISH_DIR
+          /p:Version=$env:VERSION
+          /p:FileVersion=$env:FILE_VERSION
+          /p:InformationalVersion=$env:INFORMATIONAL_VERSION
+
+      - name: Install Inno Setup if needed
+        shell: pwsh
+        run: |
+          $iscc = Get-Command -Name 'iscc.exe' -ErrorAction SilentlyContinue
+          if ($null -eq $iscc) {
+            choco install innosetup --no-progress --yes
+          }
+
+      - name: Materialize MSIX signing certificate
+        id: msix-signing
+        shell: pwsh
+        env:
+          MSIX_SIGNING_CERTIFICATE_BASE64: ${{ secrets.MSIX_SIGNING_CERTIFICATE_BASE64 }}
+        run: |
+          $certificateDirectory = Join-Path $env:RUNNER_TEMP 'msix-signing'
+          New-Item -ItemType Directory -Path $certificateDirectory -Force | Out-Null
+
+          $certificatePath = Join-Path $certificateDirectory 'nwsh-release-signing.pfx'
+          [System.IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:MSIX_SIGNING_CERTIFICATE_BASE64))
+
+          "certificate_path=$certificatePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Run shared GUI packaging
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          GUI_PUBLISH_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/publish/gui-win-x64
+          RELEASE_ROOT: artifacts/release/${{ steps.compute.outputs.Version }}
+          INSTALLER_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/installer
+          MSIX_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/msix
+          MSIX_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $arguments = @(
+            '-PublishDirectory', $env:GUI_PUBLISH_DIR,
+            '-Version', $env:VERSION,
+            '-PackageIdentityName', $env:MSIX_PACKAGE_IDENTITY_NAME,
+            '-PackageDisplayName', $env:MSIX_PACKAGE_DISPLAY_NAME,
+            '-PackagePublisher', $env:MSIX_PACKAGE_PUBLISHER,
+            '-PackagePublisherDisplayName', $env:MSIX_PACKAGE_PUBLISHER_DISPLAY_NAME,
+            '-PackageDescription', $env:MSIX_PACKAGE_DESCRIPTION,
+            '-InstallerOutputDirectory', $env:INSTALLER_DIR,
+            '-MsixOutputDirectory', $env:MSIX_DIR,
+            '-ChecksumArtifactsPath', $env:RELEASE_ROOT,
+            '-SignMsix',
+            '-CertificatePath', '${{ steps.msix-signing.outputs.certificate_path }}',
+            '-CertificatePassword', $env:MSIX_SIGNING_CERTIFICATE_PASSWORD
+          )
+
+          if (-not [string]::IsNullOrWhiteSpace($env:MSIX_SIGNING_TIMESTAMP_URL)) {
+            $arguments += @('-TimestampServerUrl', $env:MSIX_SIGNING_TIMESTAMP_URL)
+          }
+
+          & ./scripts/package-gui-distribution.ps1 @arguments
+
+      - name: Create portable zip archives
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          GUI_PUBLISH_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/publish/gui-win-x64
+          CLI_PUBLISH_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/publish/cli-win-x64
+          PORTABLE_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/portable
+        run: |
+          New-Item -ItemType Directory -Path $env:PORTABLE_DIR -Force | Out-Null
+
+          $guiPortableZip = Join-Path $env:PORTABLE_DIR "NWSHelper-Gui-win-x64-$env:VERSION.zip"
+          $cliPortableZip = Join-Path $env:PORTABLE_DIR "NWSHelper-Cli-win-x64-$env:VERSION.zip"
+
+          if (Test-Path -LiteralPath $guiPortableZip) {
+            Remove-Item -LiteralPath $guiPortableZip -Force
+          }
+
+          if (Test-Path -LiteralPath $cliPortableZip) {
+            Remove-Item -LiteralPath $cliPortableZip -Force
+          }
+
+          Compress-Archive -Path (Join-Path $env:GUI_PUBLISH_DIR '*') -DestinationPath $guiPortableZip -CompressionLevel Optimal
+          Compress-Archive -Path (Join-Path $env:CLI_PUBLISH_DIR '*') -DestinationPath $cliPortableZip -CompressionLevel Optimal
+
+      - name: Generate update metadata
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          RELEASE_ROOT: artifacts/release/${{ steps.compute.outputs.Version }}
+          UPDATE_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/update
+        run: |
+          $tag = if ([string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) { "v$env:VERSION" } else { $env:RELEASE_TAG }
+          $resolvedUpdateDirectory = [System.IO.Path]::GetFullPath($env:UPDATE_DIR)
+          $metadataPath = Join-Path $resolvedUpdateDirectory 'update-metadata.json'
+          $downloadBaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag"
+
+          ./scripts/generate-update-metadata.ps1 `
+            -ArtifactsPath $env:RELEASE_ROOT `
+            -Version $env:VERSION `
+            -OutputFile $metadataPath `
+            -BaseDownloadUrl $downloadBaseUrl
+
+      - name: Generate NetSparkle appcast
+        if: ${{ steps.release-channel.outputs.is_prerelease != 'true' }}
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          INSTALLER_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/installer
+          UPDATE_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/update
+          NWSHELPER_APPCAST_SIGNING_KEY: ${{ secrets.NWSHELPER_APPCAST_SIGNING_KEY }}
+        run: |
+          $resolvedUpdateDirectory = [System.IO.Path]::GetFullPath($env:UPDATE_DIR)
+          ./scripts/generate-appcast.ps1 `
+            -ArtifactsPath $env:INSTALLER_DIR `
+            -Version $env:VERSION `
+            -OutputDirectory $resolvedUpdateDirectory `
+            -OutputFile appcast.xml `
+            -SignatureOutputFile appcast.xml.signature `
+            -BaseDownloadUrl "https://github.com/$env:GITHUB_REPOSITORY/releases/latest/download" `
+            -AppcastUrl "https://github.com/$env:GITHUB_REPOSITORY/releases/latest/download/appcast.xml"
+
+      - name: Verify appcast artifacts
+        if: ${{ steps.release-channel.outputs.is_prerelease != 'true' }}
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          UPDATE_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/update
+        run: |
+          $appcastPath = Join-Path $env:UPDATE_DIR 'appcast.xml'
+          $signaturePath = Join-Path $env:UPDATE_DIR 'appcast.xml.signature'
+
+          if (-not (Test-Path -LiteralPath $appcastPath -PathType Leaf)) {
+            throw "Expected appcast file was not generated: $appcastPath"
+          }
+
+          if (-not (Test-Path -LiteralPath $signaturePath -PathType Leaf)) {
+            throw "Expected appcast signature file was not generated: $signaturePath"
+          }
+
+      - name: Export bundle metadata
+        id: bundle-metadata
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+        run: |
+          "artifact_name=release-bundle-$env:VERSION" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload release artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle-${{ steps.compute.outputs.Version }}
+          path: artifacts/release/${{ steps.compute.outputs.Version }}
+
+  github-release-publish:
+    needs:
+      - release-gate
+      - build-package-bundle
+    if: ${{ needs.release-gate.outputs.should_publish_github_release == 'true' }}
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.build-package-bundle.outputs.version }}
+      IS_PRERELEASE: ${{ needs.build-package-bundle.outputs.is_prerelease }}
+      RELEASE_ARTIFACT_NAME: ${{ needs.build-package-bundle.outputs.artifact_name }}
+      RELEASE_TAG: ${{ needs.release-gate.outputs.release_tag }}
+      SOURCE_SHA: ${{ needs.release-gate.outputs.source_sha }}
+    steps:
+      - name: Download release artifact bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.RELEASE_ARTIFACT_NAME }}
+          path: artifacts/release/${{ env.VERSION }}
+
+      - name: Publish GitHub Release assets
+        shell: pwsh
+        run: |
+          $releaseRoot = [System.IO.Path]::GetFullPath((Join-Path 'artifacts/release' $env:VERSION))
+          $tag = if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) {
+            $env:RELEASE_TAG
+          }
+          else {
+            "v$env:VERSION"
+          }
+
+          $isPrerelease = $env:IS_PRERELEASE -eq 'true'
+          $releaseTitle = "NWS Helper $env:VERSION"
+          $releaseNotes = "Automated release for NWS Helper $env:VERSION."
+
+          $msixAsset = Get-ChildItem -LiteralPath (Join-Path $releaseRoot 'msix') -File -Filter 'NWSHelper-*.msix' |
+            Sort-Object Name |
+            Select-Object -First 1
+
+          if ($null -eq $msixAsset) {
+            throw "Could not find MSIX asset under $(Join-Path $releaseRoot 'msix')."
+          }
+
+          $assets = @(
+            (Join-Path $releaseRoot "installer/NWSHelper-Setup-$env:VERSION.exe"),
+            (Join-Path $releaseRoot "portable/NWSHelper-Cli-win-x64-$env:VERSION.zip"),
+            (Join-Path $releaseRoot "portable/NWSHelper-Gui-win-x64-$env:VERSION.zip"),
+            $msixAsset.FullName,
+            (Join-Path $releaseRoot 'update/update-metadata.json'),
+            (Join-Path $releaseRoot 'checksums.sha256')
+          )
+
+          if (-not $isPrerelease) {
+            $assets += @(
+              (Join-Path $releaseRoot 'update/appcast.xml'),
+              (Join-Path $releaseRoot 'update/appcast.xml.signature')
+            )
+          }
+
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
+              throw "Expected release asset is missing: $asset"
+            }
+          }
+
+          gh release view $tag *> $null
+          $releaseExists = $LASTEXITCODE -eq 0
+          if (-not $releaseExists) {
+            $createArguments = @('release', 'create', $tag, '--target', $env:SOURCE_SHA, '--title', $releaseTitle, '--notes', $releaseNotes)
+
+            if ($isPrerelease) {
+              $createArguments += '--prerelease'
+            }
+
+            & gh @createArguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "gh release create failed for tag $tag with exit code $LASTEXITCODE."
+            }
+          }
+
+          $releaseJson = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to load GitHub Release metadata for tag $tag."
+          }
+
+          $release = $releaseJson | ConvertFrom-Json
+          $makeLatest = if ($isPrerelease) { 'false' } else { 'true' }
+          $prereleaseValue = ([string]$isPrerelease).ToLowerInvariant()
+
+          gh api --method PATCH "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)" `
+            -F name="$releaseTitle" `
+            -F body="$releaseNotes" `
+            -F "prerelease=$prereleaseValue" `
+            -F "make_latest=$makeLatest" *> $null
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to update GitHub Release metadata for tag $tag."
+          }
+
+          gh release upload $tag $assets --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "gh release upload failed for tag $tag with exit code $LASTEXITCODE."
+          }
+
+  partner-center-production-prepare:
+    needs:
+      - release-gate
+      - build-package-bundle
+    if: ${{ needs.release-gate.outputs.should_prepare_store == 'true' }}
+    runs-on: windows-latest
+    environment:
+      name: ${{ 'public-store-release' }}
+    env:
+      VERSION: ${{ needs.build-package-bundle.outputs.version }}
+      RELEASE_ARTIFACT_NAME: ${{ needs.build-package-bundle.outputs.artifact_name }}
+      PARTNER_CENTER_APPLICATION_ID: ${{ secrets.PARTNER_CENTER_APPLICATION_ID }}
+      PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE: ${{ vars.PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE }}
+      MSIX_PACKAGE_IDENTITY_NAME: ${{ vars.MSIX_PACKAGE_IDENTITY_NAME }}
+      MSIX_PACKAGE_PUBLISHER: ${{ vars.MSIX_PACKAGE_PUBLISHER }}
+      MSIX_DIR: artifacts/store-production/msix
+      STORE_EVIDENCE_DIR: artifacts/store-production/partner-center
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-gate.outputs.source_sha }}
+
+      - name: Download canonical release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.RELEASE_ARTIFACT_NAME }}
+          path: artifacts/release/${{ env.VERSION }}
+
+      - name: Validate required Store staging metadata
+        shell: pwsh
+        run: |
+          foreach ($requiredName in @(
+            'PARTNER_CENTER_APPLICATION_ID',
+            'MSIX_PACKAGE_IDENTITY_NAME',
+            'MSIX_PACKAGE_PUBLISHER'
+          )) {
+            $requiredValue = [Environment]::GetEnvironmentVariable($requiredName)
+            if ([string]::IsNullOrWhiteSpace($requiredValue)) {
+              throw "Required public-store-release value '$requiredName' is missing. Configure the protected public-store-release environment first."
+            }
+          }
+
+      - name: Stage production Store package and local identity validation
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path $env:MSIX_DIR -Force | Out-Null
+          New-Item -ItemType Directory -Path $env:STORE_EVIDENCE_DIR -Force | Out-Null
+
+          $releaseRoot = [System.IO.Path]::GetFullPath((Join-Path 'artifacts/release' $env:VERSION))
+          $msixAsset = Get-ChildItem -LiteralPath (Join-Path $releaseRoot 'msix') -File -Filter 'NWSHelper-*.msix' |
+            Sort-Object Name |
+            Select-Object -First 1
+
+          if ($null -eq $msixAsset) {
+            throw "Could not find MSIX asset under $(Join-Path $releaseRoot 'msix')."
+          }
+
+          $preparedPackagePath = Join-Path ([System.IO.Path]::GetFullPath($env:MSIX_DIR)) $msixAsset.Name
+          Copy-Item -LiteralPath $msixAsset.FullName -Destination $preparedPackagePath -Force
+
+          $targetPublishMode = if ([string]::IsNullOrWhiteSpace($env:PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE)) { 'Manual' } else { $env:PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE }
+          $evidencePath = Join-Path ([System.IO.Path]::GetFullPath($env:STORE_EVIDENCE_DIR)) 'partner-center-production-validation.json'
+
+          ./scripts/store/submit-partner-center-flight.ps1 `
+            -SubmissionTarget Production `
+            -ApplicationId $env:PARTNER_CENTER_APPLICATION_ID `
+            -PackagePath $preparedPackagePath `
+            -ExpectedPackageIdentityName $env:MSIX_PACKAGE_IDENTITY_NAME `
+            -ExpectedPackagePublisher $env:MSIX_PACKAGE_PUBLISHER `
+            -TargetPublishMode $targetPublishMode `
+            -ForceReplacePendingSubmission:${{ inputs.force_replace_pending_store_submission == 'true' }} `
+            -EvidenceOutputPath $evidencePath `
+            -ValidateOnly
+
+      - name: Upload production Store prepare artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner-center-production-package-${{ env.VERSION }}
+          path: |
+            ${{ env.MSIX_DIR }}
+            ${{ env.STORE_EVIDENCE_DIR }}
+
+  partner-center-production-submit:
+    needs:
+      - release-gate
+      - build-package-bundle
+      - partner-center-production-prepare
+    if: ${{ needs.release-gate.outputs.should_submit_store == 'true' }}
+    runs-on: windows-latest
+    environment:
+      name: ${{ 'public-store-release' }}
+    env:
+      VERSION: ${{ needs.build-package-bundle.outputs.version }}
+      MSIX_DIR: artifacts/store-production/msix
+      STORE_EVIDENCE_DIR: artifacts/store-production/partner-center
+      PARTNER_CENTER_TENANT_ID: ${{ secrets.PARTNER_CENTER_TENANT_ID }}
+      PARTNER_CENTER_CLIENT_ID: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
+      PARTNER_CENTER_CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
+      PARTNER_CENTER_APPLICATION_ID: ${{ secrets.PARTNER_CENTER_APPLICATION_ID }}
+      PARTNER_CENTER_SUBMISSION_NOTES: ${{ vars.PARTNER_CENTER_SUBMISSION_NOTES }}
+      PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE: ${{ vars.PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE }}
+      MSIX_PACKAGE_IDENTITY_NAME: ${{ vars.MSIX_PACKAGE_IDENTITY_NAME }}
+      MSIX_PACKAGE_PUBLISHER: ${{ vars.MSIX_PACKAGE_PUBLISHER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-gate.outputs.source_sha }}
+
+      - name: Download production Store package
+        uses: actions/download-artifact@v4
+        with:
+          name: partner-center-production-package-${{ env.VERSION }}
+          path: artifacts/store-production
+
+      - name: Validate required Partner Center submission secrets
+        shell: pwsh
+        run: |
+          foreach ($requiredName in @(
+            'PARTNER_CENTER_TENANT_ID',
+            'PARTNER_CENTER_CLIENT_ID',
+            'PARTNER_CENTER_CLIENT_SECRET',
+            'PARTNER_CENTER_APPLICATION_ID',
+            'MSIX_PACKAGE_IDENTITY_NAME',
+            'MSIX_PACKAGE_PUBLISHER'
+          )) {
+            $requiredValue = [Environment]::GetEnvironmentVariable($requiredName)
+            if ([string]::IsNullOrWhiteSpace($requiredValue)) {
+              throw "Required Partner Center submission value '$requiredName' is missing. Configure the protected public-store-release environment first."
+            }
+          }
+
+      - name: Submit prepared production Store package
+        shell: pwsh
+        run: |
+          $packagePath = Get-ChildItem -LiteralPath $env:MSIX_DIR -File -Filter 'NWSHelper-*.msix' |
+            Sort-Object Name |
+            Select-Object -First 1 -ExpandProperty FullName
+
+          if ([string]::IsNullOrWhiteSpace($packagePath)) {
+            throw "Could not find prepared MSIX under $env:MSIX_DIR."
+          }
+
+          $targetPublishMode = if ([string]::IsNullOrWhiteSpace($env:PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE)) { 'Manual' } else { $env:PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE }
+
+          ./scripts/store/submit-partner-center-flight.ps1 `
+            -SubmissionTarget Production `
+            -ApplicationId $env:PARTNER_CENTER_APPLICATION_ID `
+            -PackagePath $packagePath `
+            -TenantId $env:PARTNER_CENTER_TENANT_ID `
+            -ClientId $env:PARTNER_CENTER_CLIENT_ID `
+            -ClientSecret $env:PARTNER_CENTER_CLIENT_SECRET `
+            -SubmissionNotes $env:PARTNER_CENTER_SUBMISSION_NOTES `
+            -TargetPublishMode $targetPublishMode `
+            -ExpectedPackageIdentityName $env:MSIX_PACKAGE_IDENTITY_NAME `
+            -ExpectedPackagePublisher $env:MSIX_PACKAGE_PUBLISHER `
+            -ForceReplacePendingSubmission:${{ inputs.force_replace_pending_store_submission == 'true' }} `
+            -EvidenceOutputPath (Join-Path $env:STORE_EVIDENCE_DIR 'partner-center-production-submission.json')
+
+      - name: Upload production Store submission evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner-center-production-submission-${{ env.VERSION }}
+          path: |
+            ${{ env.MSIX_DIR }}
+            ${{ env.STORE_EVIDENCE_DIR }}
