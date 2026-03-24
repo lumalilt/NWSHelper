@@ -26,6 +26,9 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("GH_REPO: ${{ github.repository }}", workflow, StringComparison.Ordinal);
         Assert.Contains("gh release view $tag --repo $env:GH_REPO", workflow, StringComparison.Ordinal);
         Assert.Contains("gh release upload $tag $assets --repo $env:GH_REPO --clobber", workflow, StringComparison.Ordinal);
+        Assert.Contains("Get-WorkflowRunsForSha 'public-core-compatibility.yml' $sourceSha", workflow, StringComparison.Ordinal);
+        Assert.Contains("public-core-compatibility failed for SHA $sourceSha", workflow, StringComparison.Ordinal);
+        Assert.Contains("required successful public-ci and public-core-compatibility", workflow, StringComparison.Ordinal);
     }
 
     private static string GetRepositoryRoot()

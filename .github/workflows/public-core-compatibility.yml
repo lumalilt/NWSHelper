@@ -1,0 +1,175 @@
+name: public-core-compatibility
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      core_package_version:
+        description: Exact stable NWSHelper.Core package version to validate or pin
+        required: false
+        default: ''
+      push_pin_update:
+        description: Update version.json to the validated Core package version during workflow_dispatch
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: public-core-compatibility-${{ github.event_name == 'workflow_dispatch' && inputs.core_package_version || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  compatibility-check:
+    runs-on: windows-latest
+    outputs:
+      effective_core_package_version: ${{ steps.resolve.outputs.effective_core_package_version }}
+      should_validate: ${{ steps.resolve.outputs.should_validate }}
+      should_update_pin: ${{ steps.resolve.outputs.should_update_pin }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve Core compatibility target
+        id: resolve
+        shell: pwsh
+        env:
+          REQUESTED_CORE_PACKAGE_VERSION: ${{ inputs.core_package_version }}
+          PUSH_PIN_UPDATE: ${{ inputs.push_pin_update }}
+        run: |
+          function Set-ActionOutput([string]$name, [string]$value) {
+            "$name=$value" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
+          function Parse-StableVersion([string]$value) {
+            $match = [regex]::Match($value, '^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)$')
+            if (-not $match.Success) {
+              throw "Expected an exact stable version in major.minor.patch form, got '$value'."
+            }
+
+            return [pscustomobject]@{
+              Original = $value
+              Major = [int]$match.Groups['major'].Value
+              Minor = [int]$match.Groups['minor'].Value
+              Patch = [int]$match.Groups['patch'].Value
+              Comparable = [System.Version]::new(
+                [int]$match.Groups['major'].Value,
+                [int]$match.Groups['minor'].Value,
+                [int]$match.Groups['patch'].Value)
+            }
+          }
+
+          $versionData = Get-Content -LiteralPath .\version.json -Raw | ConvertFrom-Json
+          if (-not ($versionData.PSObject.Properties.Name -contains 'corePackageVersion')) {
+            throw 'version.json is missing required property corePackageVersion.'
+          }
+
+          $currentPin = Parse-StableVersion $versionData.corePackageVersion
+          $requestedVersionText = $env:REQUESTED_CORE_PACKAGE_VERSION
+          $shouldValidate = $true
+          $shouldUpdatePin = $false
+
+          if ([string]::IsNullOrWhiteSpace($requestedVersionText)) {
+            $effectiveVersion = $currentPin
+            Write-Host "Validating currently pinned Core package version $($currentPin.Original)."
+          }
+          else {
+            $requestedVersion = Parse-StableVersion $requestedVersionText
+
+            if ($requestedVersion.Major -ne $currentPin.Major -or $requestedVersion.Minor -ne $currentPin.Minor) {
+              Write-Host "Skipping Core package adoption for $($requestedVersion.Original): current public pin $($currentPin.Original) only allows patch updates in major.minor band $($currentPin.Major).$($currentPin.Minor).x."
+              $shouldValidate = $false
+              $effectiveVersion = $currentPin
+            }
+            else {
+              $effectiveVersion = $requestedVersion
+              $shouldUpdatePin = $env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and
+                [string]::Equals($env:PUSH_PIN_UPDATE, 'true', [System.StringComparison]::OrdinalIgnoreCase) -and
+                $requestedVersion.Comparable -gt $currentPin.Comparable
+
+              if ($requestedVersion.Comparable -le $currentPin.Comparable) {
+                Write-Host "Core package version $($requestedVersion.Original) is already pinned or older than the current pin $($currentPin.Original); validating without updating the pin."
+              }
+            }
+          }
+
+          Set-ActionOutput 'effective_core_package_version' $effectiveVersion.Original
+          Set-ActionOutput 'should_validate' ([string]$shouldValidate).ToLowerInvariant()
+          Set-ActionOutput 'should_update_pin' ([string]$shouldUpdatePin).ToLowerInvariant()
+
+      - name: Run public-safe tests
+        if: ${{ steps.resolve.outputs.should_validate == 'true' }}
+        run: dotnet test .\NWSHelper.Public.Tests\NWSHelper.Public.Tests.csproj --configuration Release --nologo
+
+      - name: Build public solution against effective Core package
+        if: ${{ steps.resolve.outputs.should_validate == 'true' }}
+        shell: pwsh
+        env:
+          EFFECTIVE_CORE_PACKAGE_VERSION: ${{ steps.resolve.outputs.effective_core_package_version }}
+        run: >
+          dotnet build .\NWSHelper.Public.slnx --configuration Release --nologo
+          /p:CorePackageVersion=$env:EFFECTIVE_CORE_PACKAGE_VERSION
+
+  update-core-pin:
+    needs: compatibility-check
+    if: ${{ needs.compatibility-check.outputs.should_update_pin == 'true' }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Update pinned Core package version
+        shell: pwsh
+        env:
+          EFFECTIVE_CORE_PACKAGE_VERSION: ${{ needs.compatibility-check.outputs.effective_core_package_version }}
+        run: |
+          $versionPath = Join-Path $env:GITHUB_WORKSPACE 'version.json'
+          $versionData = Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json
+
+          $updatedVersionData = [ordered]@{
+            major = [int]$versionData.major
+            minor = [int]$versionData.minor
+            patch = [int]$versionData.patch
+            corePackageVersion = $env:EFFECTIVE_CORE_PACKAGE_VERSION
+          }
+
+          $json = $updatedVersionData | ConvertTo-Json
+          Set-Content -LiteralPath $versionPath -Value ($json + [Environment]::NewLine) -Encoding utf8
+
+      - name: Commit pinned Core package version update
+        shell: pwsh
+        env:
+          EFFECTIVE_CORE_PACKAGE_VERSION: ${{ needs.compatibility-check.outputs.effective_core_package_version }}
+          PUBLIC_REPO_AUTOMATION_TOKEN: ${{ secrets.PUBLIC_REPO_AUTOMATION_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PUBLIC_REPO_AUTOMATION_TOKEN)) {
+            throw 'PUBLIC_REPO_AUTOMATION_TOKEN is required to push automatic Core pin updates and trigger follow-on workflows.'
+          }
+
+          git diff --quiet -- version.json
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'Pinned Core package version already matches the requested update.'
+            exit 0
+          }
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add version.json
+          git commit -m "Pin public Core package to $env:EFFECTIVE_CORE_PACKAGE_VERSION"
+
+          $remoteUrl = "https://x-access-token:$env:PUBLIC_REPO_AUTOMATION_TOKEN@github.com/$env:GITHUB_REPOSITORY.git"
+          git push $remoteUrl HEAD:main

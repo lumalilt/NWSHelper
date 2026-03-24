@@ -6,7 +6,6 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <UseCorePackageReference Condition="'$(UseCorePackageReference)' == ''">true</UseCorePackageReference>
-    <CorePackageVersion Condition="'$(CorePackageVersion)' == ''">$(Version)</CorePackageVersion>
     <CorePackageSource Condition="'$(CorePackageSource)' == ''"></CorePackageSource>
     <RestoreAdditionalProjectSources Condition="'$(UseCorePackageReference)' == 'true' and '$(CorePackageSource)' != '' and Exists('$(CorePackageSource)')">$(RestoreAdditionalProjectSources);$(CorePackageSource)</RestoreAdditionalProjectSources>
   </PropertyGroup>
@@ -46,6 +45,9 @@
 
   <Target Name="ValidateCorePackageReferenceSettings" BeforeTargets="Restore" Condition="'$(UseCorePackageReference)' == 'true' and '$(CorePackageSource)' != ''">
     <Error Condition="!Exists('$(CorePackageSource)')" Text="Core package source not found: $(CorePackageSource)" />
+  </Target>
+  <Target Name="ValidateCorePackageVersion" BeforeTargets="Restore" Condition="'$(UseCorePackageReference)' == 'true'">
+    <Error Condition="'$(CorePackageVersion)' == ''" Text="Core package version is required. Set corePackageVersion in version.json or pass /p:CorePackageVersion=..." />
   </Target>
 </Project>
 

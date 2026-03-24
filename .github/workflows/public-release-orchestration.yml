@@ -178,20 +178,28 @@ jobs:
             }
             else {
               $ciRuns = Get-WorkflowRunsForSha 'public-ci.yml' $sourceSha
+              $compatibilityRuns = Get-WorkflowRunsForSha 'public-core-compatibility.yml' $sourceSha
 
               $ciSucceeded = Test-HasSuccessfulRun $ciRuns
               $ciRunning = Test-HasRunningRun $ciRuns
               $ciFailed = Test-HasFailedRun $ciRuns
+              $compatibilitySucceeded = Test-HasSuccessfulRun $compatibilityRuns
+              $compatibilityRunning = Test-HasRunningRun $compatibilityRuns
+              $compatibilityFailed = Test-HasFailedRun $compatibilityRuns
 
               if ($ciFailed -and -not $ciSucceeded) {
                 throw "public-ci failed for SHA $sourceSha."
               }
 
-              if ($ciRunning) {
+              if ($compatibilityFailed -and -not $compatibilitySucceeded) {
+                throw "public-core-compatibility failed for SHA $sourceSha."
+              }
+
+              if ($ciRunning -or $compatibilityRunning) {
                 Write-Host "Skipping release for ${releaseTag}: public-ci is still running for SHA $sourceSha."
               }
-              elseif (-not $ciSucceeded) {
-                Write-Host "Skipping release for ${releaseTag}: required successful public-ci for SHA $sourceSha is not available yet."
+              elseif (-not $ciSucceeded -or -not $compatibilitySucceeded) {
+                Write-Host "Skipping release for ${releaseTag}: required successful public-ci and public-core-compatibility for SHA $sourceSha are not available yet."
               }
               else {
                 $shouldPublishGitHubRelease = $true

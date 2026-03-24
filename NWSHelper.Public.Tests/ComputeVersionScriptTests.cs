@@ -35,6 +35,18 @@ public class ComputeVersionScriptTests
 
         AssertPropertyExistsWith(
             propertyGroup,
+            elementName: "CorePackageVersionFromJson",
+            expectedCondition: "'$(CorePackageVersionFromJson)' == '' and '$(VersionJsonRaw)' != ''",
+            expectedValue: "$([System.Text.RegularExpressions.Regex]::Match('$(VersionJsonRaw)', '\"corePackageVersion\"\\s*:\\s*\"([^\"]+)\"').Groups[1].Value)");
+
+        AssertPropertyExistsWith(
+            propertyGroup,
+            elementName: "CorePackageVersion",
+            expectedCondition: "'$(CorePackageVersion)' == '' and '$(CorePackageVersionFromJson)' != ''",
+            expectedValue: "$(CorePackageVersionFromJson)");
+
+        AssertPropertyExistsWith(
+            propertyGroup,
             elementName: "FileVersion",
             expectedCondition: "'$(FileVersion)' == '' and '$(VersionPrefixFromJson)' != ''",
             expectedValue: "$(VersionPrefixFromJson).0");
@@ -137,6 +149,14 @@ public class ComputeVersionScriptTests
 
         Assert.Equal("true", output["IsTagBuild"]);
             Assert.Equal(version.Prefix, output["Version"]);
+    }
+
+    [Fact]
+    public void VersionJson_DefinesPinnedCorePackageVersion()
+    {
+        var version = GetCurrentVersionInfo();
+
+        Assert.Matches(@"^\d+\.\d+\.\d+$", version.CorePackageVersion);
     }
 
     private static Dictionary<string, string> RunComputeVersionScript(
@@ -266,7 +286,7 @@ public class ComputeVersionScriptTests
         ];
     }
 
-    private static (int Major, int Minor, int Patch, string Prefix) GetCurrentVersionInfo()
+    private static (int Major, int Minor, int Patch, string Prefix, string CorePackageVersion) GetCurrentVersionInfo()
     {
         var versionPath = Path.Combine(GetRepositoryRoot(), "version.json");
         Assert.True(File.Exists(versionPath), $"Expected version source file at {versionPath}");
@@ -276,8 +296,11 @@ public class ComputeVersionScriptTests
         var major = root.GetProperty("major").GetInt32();
         var minor = root.GetProperty("minor").GetInt32();
         var patch = root.GetProperty("patch").GetInt32();
+        var corePackageVersion = root.GetProperty("corePackageVersion").GetString();
 
-        return (major, minor, patch, $"{major}.{minor}.{patch}");
+        Assert.False(string.IsNullOrWhiteSpace(corePackageVersion));
+
+        return (major, minor, patch, $"{major}.{minor}.{patch}", corePackageVersion!);
     }
 
     private static void AssertProperty(

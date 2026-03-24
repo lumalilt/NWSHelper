@@ -12,7 +12,9 @@ This repository is intended to contain the public GUI, CLI, packaging scripts, r
 
 ## Local bootstrap build
 
-From this repo, the default build restores the stable `NWSHelper.Core` version from `NuGet.org` that matches `version.json`.
+From this repo, the default build restores the exact stable `NWSHelper.Core` version pinned in `version.json`.
+
+The public automation treats that pinned version's major and minor as the currently allowed compatibility band. Patch updates in the same band can be adopted automatically after the published package has been validated against the public repo and the pin has been updated.
 
 To test against a local packed Core artifact instead, build with:
 
@@ -27,6 +29,7 @@ If you are using the published stable package, you do not need `CorePackageSourc
 - `NWSHelper.Gui`
 - `NWSHelper.Cli`
 - `scripts/` for public packaging and release support
+- `version.json` for public app versioning plus the exact pinned `corePackageVersion`
 
 ## Release artifacts
 

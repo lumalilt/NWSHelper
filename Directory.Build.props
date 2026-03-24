@@ -5,8 +5,10 @@
     <VersionMajor Condition="'$(VersionMajor)' == '' and '$(VersionJsonRaw)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(VersionJsonRaw)', '&quot;major&quot;\s*:\s*(\d+)').Groups[1].Value)</VersionMajor>
     <VersionMinor Condition="'$(VersionMinor)' == '' and '$(VersionJsonRaw)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(VersionJsonRaw)', '&quot;minor&quot;\s*:\s*(\d+)').Groups[1].Value)</VersionMinor>
     <VersionPatch Condition="'$(VersionPatch)' == '' and '$(VersionJsonRaw)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(VersionJsonRaw)', '&quot;patch&quot;\s*:\s*(\d+)').Groups[1].Value)</VersionPatch>
+    <CorePackageVersionFromJson Condition="'$(CorePackageVersionFromJson)' == '' and '$(VersionJsonRaw)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(VersionJsonRaw)', '&quot;corePackageVersion&quot;\s*:\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</CorePackageVersionFromJson>
     <VersionPrefixFromJson Condition="'$(VersionPrefixFromJson)' == '' and '$(VersionMajor)' != '' and '$(VersionMinor)' != '' and '$(VersionPatch)' != ''">$(VersionMajor).$(VersionMinor).$(VersionPatch)</VersionPrefixFromJson>
 
+    <CorePackageVersion Condition="'$(CorePackageVersion)' == '' and '$(CorePackageVersionFromJson)' != ''">$(CorePackageVersionFromJson)</CorePackageVersion>
     <Version Condition="'$(Version)' == '' and '$(VersionPrefixFromJson)' != ''">$(VersionPrefixFromJson)</Version>
     <Version Condition="'$(Version)' == ''">1.0.0</Version>
     <FileVersion Condition="'$(FileVersion)' == '' and '$(VersionPrefixFromJson)' != ''">$(VersionPrefixFromJson).0</FileVersion>

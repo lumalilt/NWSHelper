@@ -1,6 +1,7 @@
 {
   "major": 1,
   "minor": 0,
-  "patch": 10
+  "patch": 10,
+  "corePackageVersion": "1.0.9"
 
 }
