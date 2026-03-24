@@ -219,6 +219,8 @@ jobs:
       file_version: ${{ steps.compute.outputs.FileVersion }}
       informational_version: ${{ steps.compute.outputs.InformationalVersion }}
       is_prerelease: ${{ steps.release-channel.outputs.is_prerelease }}
+      build_msix_package: ${{ steps.msix-policy.outputs.build_msix_package }}
+      include_msix_in_release: ${{ steps.msix-policy.outputs.include_msix_in_release }}
       artifact_name: ${{ steps.bundle-metadata.outputs.artifact_name }}
     env:
       GUI_TARGET_FRAMEWORK: net10.0-windows10.0.19041.0
@@ -256,6 +258,18 @@ jobs:
           $isPrerelease = $isTagPrerelease -or $isManualPrerelease
           "is_prerelease=$(([string]$isPrerelease).ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+      - name: Determine MSIX packaging policy
+        id: msix-policy
+        shell: pwsh
+        env:
+          INCLUDE_GITHUB_RELEASE_MSIX: ${{ vars.INCLUDE_GITHUB_RELEASE_MSIX }}
+        run: |
+          $includeMsixInRelease = [string]::Equals($env:INCLUDE_GITHUB_RELEASE_MSIX, 'true', [System.StringComparison]::OrdinalIgnoreCase)
+          $buildMsixPackage = $includeMsixInRelease -or '${{ needs.release-gate.outputs.should_prepare_store }}' -eq 'true'
+
+          "include_msix_in_release=$(([string]$includeMsixInRelease).ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "build_msix_package=$(([string]$buildMsixPackage).ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Validate release signing configuration
         shell: pwsh
         env:
@@ -263,13 +277,18 @@ jobs:
           MSIX_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_SIGNING_CERTIFICATE_PASSWORD }}
           NWSHELPER_APPCAST_SIGNING_KEY: ${{ secrets.NWSHELPER_APPCAST_SIGNING_KEY }}
         run: |
-          foreach ($requiredName in @(
-            'MSIX_PACKAGE_IDENTITY_NAME',
-            'MSIX_PACKAGE_PUBLISHER',
-            'MSIX_SIGNING_CERTIFICATE_BASE64',
-            'MSIX_SIGNING_CERTIFICATE_PASSWORD',
-            'NWSHELPER_APPCAST_SIGNING_KEY'
-          )) {
+          $requiredNames = @('NWSHELPER_APPCAST_SIGNING_KEY')
+
+          if ('${{ steps.msix-policy.outputs.build_msix_package }}' -eq 'true') {
+            $requiredNames += @(
+              'MSIX_PACKAGE_IDENTITY_NAME',
+              'MSIX_PACKAGE_PUBLISHER',
+              'MSIX_SIGNING_CERTIFICATE_BASE64',
+              'MSIX_SIGNING_CERTIFICATE_PASSWORD'
+            )
+          }
+
+          foreach ($requiredName in $requiredNames) {
             $requiredValue = [Environment]::GetEnvironmentVariable($requiredName)
             if ([string]::IsNullOrWhiteSpace($requiredValue)) {
               throw "Required public-release value '$requiredName' is missing. Configure the protected public-release environment first."
@@ -350,6 +369,7 @@ jobs:
 
       - name: Materialize MSIX signing certificate
         id: msix-signing
+        if: ${{ steps.msix-policy.outputs.build_msix_package == 'true' }}
         shell: pwsh
         env:
           MSIX_SIGNING_CERTIFICATE_BASE64: ${{ secrets.MSIX_SIGNING_CERTIFICATE_BASE64 }}
@@ -375,21 +395,29 @@ jobs:
           $arguments = @(
             '-PublishDirectory', $env:GUI_PUBLISH_DIR,
             '-Version', $env:VERSION,
-            '-PackageIdentityName', $env:MSIX_PACKAGE_IDENTITY_NAME,
-            '-PackageDisplayName', $env:MSIX_PACKAGE_DISPLAY_NAME,
-            '-PackagePublisher', $env:MSIX_PACKAGE_PUBLISHER,
-            '-PackagePublisherDisplayName', $env:MSIX_PACKAGE_PUBLISHER_DISPLAY_NAME,
-            '-PackageDescription', $env:MSIX_PACKAGE_DESCRIPTION,
             '-InstallerOutputDirectory', $env:INSTALLER_DIR,
             '-MsixOutputDirectory', $env:MSIX_DIR,
-            '-ChecksumArtifactsPath', $env:RELEASE_ROOT,
-            '-SignMsix',
-            '-CertificatePath', '${{ steps.msix-signing.outputs.certificate_path }}',
-            '-CertificatePassword', $env:MSIX_SIGNING_CERTIFICATE_PASSWORD
+            '-ChecksumArtifactsPath', $env:RELEASE_ROOT
           )
 
-          if (-not [string]::IsNullOrWhiteSpace($env:MSIX_SIGNING_TIMESTAMP_URL)) {
-            $arguments += @('-TimestampServerUrl', $env:MSIX_SIGNING_TIMESTAMP_URL)
+          if ('${{ steps.msix-policy.outputs.build_msix_package }}' -eq 'true') {
+            $arguments += @(
+              '-PackageIdentityName', $env:MSIX_PACKAGE_IDENTITY_NAME,
+              '-PackageDisplayName', $env:MSIX_PACKAGE_DISPLAY_NAME,
+              '-PackagePublisher', $env:MSIX_PACKAGE_PUBLISHER,
+              '-PackagePublisherDisplayName', $env:MSIX_PACKAGE_PUBLISHER_DISPLAY_NAME,
+              '-PackageDescription', $env:MSIX_PACKAGE_DESCRIPTION,
+              '-SignMsix',
+              '-CertificatePath', '${{ steps.msix-signing.outputs.certificate_path }}',
+              '-CertificatePassword', $env:MSIX_SIGNING_CERTIFICATE_PASSWORD
+            )
+
+            if (-not [string]::IsNullOrWhiteSpace($env:MSIX_SIGNING_TIMESTAMP_URL)) {
+              $arguments += @('-TimestampServerUrl', $env:MSIX_SIGNING_TIMESTAMP_URL)
+            }
+          }
+          else {
+            $arguments += '-SkipMsix'
           }
 
           & ./scripts/package-gui-distribution.ps1 @arguments
@@ -499,6 +527,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.build-package-bundle.outputs.version }}
       IS_PRERELEASE: ${{ needs.build-package-bundle.outputs.is_prerelease }}
+      INCLUDE_MSIX_IN_RELEASE: ${{ needs.build-package-bundle.outputs.include_msix_in_release }}
       RELEASE_ARTIFACT_NAME: ${{ needs.build-package-bundle.outputs.artifact_name }}
       RELEASE_TAG: ${{ needs.release-gate.outputs.release_tag }}
       SOURCE_SHA: ${{ needs.release-gate.outputs.source_sha }}
@@ -524,22 +553,25 @@ jobs:
           $releaseTitle = "NWS Helper $env:VERSION"
           $releaseNotes = "Automated release for NWS Helper $env:VERSION."
 
-          $msixAsset = Get-ChildItem -LiteralPath (Join-Path $releaseRoot 'msix') -File -Filter 'NWSHelper-*.msix' |
-            Sort-Object Name |
-            Select-Object -First 1
-
-          if ($null -eq $msixAsset) {
-            throw "Could not find MSIX asset under $(Join-Path $releaseRoot 'msix')."
-          }
-
           $assets = @(
             (Join-Path $releaseRoot "installer/NWSHelper-Setup-$env:VERSION.exe"),
             (Join-Path $releaseRoot "portable/NWSHelper-Cli-win-x64-$env:VERSION.zip"),
             (Join-Path $releaseRoot "portable/NWSHelper-Gui-win-x64-$env:VERSION.zip"),
-            $msixAsset.FullName,
             (Join-Path $releaseRoot 'update/update-metadata.json'),
             (Join-Path $releaseRoot 'checksums.sha256')
           )
+
+          if ($env:INCLUDE_MSIX_IN_RELEASE -eq 'true') {
+            $msixAsset = Get-ChildItem -LiteralPath (Join-Path $releaseRoot 'msix') -File -Filter 'NWSHelper-*.msix' |
+              Sort-Object Name |
+              Select-Object -First 1
+
+            if ($null -eq $msixAsset) {
+              throw "Could not find MSIX asset under $(Join-Path $releaseRoot 'msix')."
+            }
+
+            $assets += $msixAsset.FullName
+          }
 
           if (-not $isPrerelease) {
             $assets += @(

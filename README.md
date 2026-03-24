@@ -27,3 +27,19 @@ If you are using the published stable package, you do not need `CorePackageSourc
 - `NWSHelper.Gui`
 - `NWSHelper.Cli`
 - `scripts/` for public packaging and release support
+
+## Release artifacts
+
+The public release workflow is intended to publish:
+
+- Windows installer (`.exe`)
+- portable GUI and CLI zip archives
+- `update-metadata.json`
+- `checksums.sha256`
+- `appcast.xml` and `appcast.xml.signature` on stable releases
+- MSIX only when explicitly enabled for the direct-download channel or when Store packaging is being exercised
+
+## Support and security
+
+- See `SUPPORT.md` for issue routing, support expectations, and release troubleshooting guidance.
+- See `SECURITY.md` for how to report vulnerabilities without posting them publicly.

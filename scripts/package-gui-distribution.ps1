@@ -40,6 +40,8 @@ param(
 
     [string]$TimestampServerUrl,
 
+    [switch]$SkipMsix,
+
     [switch]$ValidateOnly
 )
 
@@ -121,13 +123,13 @@ $installerScriptPath = Resolve-ExistingFile `
     -Path (Join-Path $PSScriptRoot 'package-installer-inno.ps1') `
     -ErrorMessage 'package-installer-inno.ps1 was not found.'
 
-$msixScriptPath = Resolve-ExistingFile `
-    -Path (Join-Path $PSScriptRoot 'package-msix.ps1') `
-    -ErrorMessage 'package-msix.ps1 was not found.'
-
 $checksumsScriptPath = Resolve-ExistingFile `
     -Path (Join-Path $PSScriptRoot 'generate-artifact-checksums.ps1') `
     -ErrorMessage 'generate-artifact-checksums.ps1 was not found.'
+
+if ($SkipMsix.IsPresent -and $SignMsix.IsPresent) {
+    throw 'SkipMsix and SignMsix cannot be used together.'
+}
 
 $installerOutputLines =
     if ($ValidateOnly.IsPresent) {
@@ -148,67 +150,78 @@ $installerOutputLines =
 $installerOutputLines = $installerOutputLines | ForEach-Object { $_.ToString() }
 $installerValues = Convert-OutputLinesToDictionary -OutputLines $installerOutputLines
 
-$msixInvocationParameters = @{
-    PublishDirectory = $resolvedPublishDirectory
-    Version = $Version
-    OutputDirectory = $resolvedMsixOutputDirectory
-}
+$msixValues = @{}
 
-if (-not [string]::IsNullOrWhiteSpace($PackageIdentityName)) {
-    $msixInvocationParameters.PackageIdentityName = $PackageIdentityName
+if ($SkipMsix.IsPresent) {
+    $msixValues['Mode'] = 'Skipped'
 }
+else {
+    $msixScriptPath = Resolve-ExistingFile `
+        -Path (Join-Path $PSScriptRoot 'package-msix.ps1') `
+        -ErrorMessage 'package-msix.ps1 was not found.'
 
-if (-not [string]::IsNullOrWhiteSpace($PackageDisplayName)) {
-    $msixInvocationParameters.PackageDisplayName = $PackageDisplayName
+    $msixInvocationParameters = @{
+        PublishDirectory = $resolvedPublishDirectory
+        Version = $Version
+        OutputDirectory = $resolvedMsixOutputDirectory
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PackageIdentityName)) {
+        $msixInvocationParameters.PackageIdentityName = $PackageIdentityName
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PackageDisplayName)) {
+        $msixInvocationParameters.PackageDisplayName = $PackageDisplayName
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PackagePublisher)) {
+        $msixInvocationParameters.PackagePublisher = $PackagePublisher
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PackagePublisherDisplayName)) {
+        $msixInvocationParameters.PackagePublisherDisplayName = $PackagePublisherDisplayName
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PackageDescription)) {
+        $msixInvocationParameters.PackageDescription = $PackageDescription
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($LogoSourcePath)) {
+        $msixInvocationParameters.LogoSourcePath = $LogoSourcePath
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($MakeAppxPath)) {
+        $msixInvocationParameters.MakeAppxPath = $MakeAppxPath
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SignToolPath)) {
+        $msixInvocationParameters.SignToolPath = $SignToolPath
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($CertificatePath)) {
+        $msixInvocationParameters.CertificatePath = $CertificatePath
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($CertificatePassword)) {
+        $msixInvocationParameters.CertificatePassword = $CertificatePassword
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($TimestampServerUrl)) {
+        $msixInvocationParameters.TimestampServerUrl = $TimestampServerUrl
+    }
+
+    if ($SignMsix.IsPresent) {
+        $msixInvocationParameters.SignPackage = $true
+    }
+
+    if ($ValidateOnly.IsPresent) {
+        $msixInvocationParameters.ValidateOnly = $true
+    }
+
+    $msixOutputLines = & $msixScriptPath @msixInvocationParameters
+    $msixOutputLines = $msixOutputLines | ForEach-Object { $_.ToString() }
+    $msixValues = Convert-OutputLinesToDictionary -OutputLines $msixOutputLines
 }
-
-if (-not [string]::IsNullOrWhiteSpace($PackagePublisher)) {
-    $msixInvocationParameters.PackagePublisher = $PackagePublisher
-}
-
-if (-not [string]::IsNullOrWhiteSpace($PackagePublisherDisplayName)) {
-    $msixInvocationParameters.PackagePublisherDisplayName = $PackagePublisherDisplayName
-}
-
-if (-not [string]::IsNullOrWhiteSpace($PackageDescription)) {
-    $msixInvocationParameters.PackageDescription = $PackageDescription
-}
-
-if (-not [string]::IsNullOrWhiteSpace($LogoSourcePath)) {
-    $msixInvocationParameters.LogoSourcePath = $LogoSourcePath
-}
-
-if (-not [string]::IsNullOrWhiteSpace($MakeAppxPath)) {
-    $msixInvocationParameters.MakeAppxPath = $MakeAppxPath
-}
-
-if (-not [string]::IsNullOrWhiteSpace($SignToolPath)) {
-    $msixInvocationParameters.SignToolPath = $SignToolPath
-}
-
-if (-not [string]::IsNullOrWhiteSpace($CertificatePath)) {
-    $msixInvocationParameters.CertificatePath = $CertificatePath
-}
-
-if (-not [string]::IsNullOrWhiteSpace($CertificatePassword)) {
-    $msixInvocationParameters.CertificatePassword = $CertificatePassword
-}
-
-if (-not [string]::IsNullOrWhiteSpace($TimestampServerUrl)) {
-    $msixInvocationParameters.TimestampServerUrl = $TimestampServerUrl
-}
-
-if ($SignMsix.IsPresent) {
-    $msixInvocationParameters.SignPackage = $true
-}
-
-if ($ValidateOnly.IsPresent) {
-    $msixInvocationParameters.ValidateOnly = $true
-}
-
-$msixOutputLines = & $msixScriptPath @msixInvocationParameters
-$msixOutputLines = $msixOutputLines | ForEach-Object { $_.ToString() }
-$msixValues = Convert-OutputLinesToDictionary -OutputLines $msixOutputLines
 
 $checksumOutputLines = & $checksumsScriptPath -ArtifactsPath $resolvedChecksumArtifactsPath -Algorithm SHA256 -OutputFile $ChecksumOutputFile
 $checksumOutputLines = $checksumOutputLines | ForEach-Object { $_.ToString() }

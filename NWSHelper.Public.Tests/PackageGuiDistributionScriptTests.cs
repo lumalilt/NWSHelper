@@ -255,6 +255,77 @@ public class PackageGuiDistributionScriptTests
         }
     }
 
+    [Fact]
+    public void PackageGuiDistributionScript_PackageMode_SkipMsixSkipsMsixPackaging()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperGuiPackagingScript", Guid.NewGuid().ToString("N"));
+        var publishDirectory = Path.Combine(root, "publish");
+        var installerDirectory = Path.Combine(root, "release", "installer");
+        var msixDirectory = Path.Combine(root, "release", "msix");
+        var fakeIsccPath = Path.Combine(root, "fake-iscc.cmd");
+        var fakeIsccInnerPath = Path.Combine(root, "fake-iscc-inner.ps1");
+
+        Directory.CreateDirectory(publishDirectory);
+        File.WriteAllText(Path.Combine(publishDirectory, "NWSHelper.Gui.exe"), "gui-exe");
+        File.WriteAllText(Path.Combine(publishDirectory, "dependency.dll"), "dep");
+
+        File.WriteAllText(
+            fakeIsccInnerPath,
+            "param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)\r\n" +
+            "$appVersion = $null\r\n" +
+            "$outputDir = $null\r\n" +
+            "foreach ($argument in $Arguments) {\r\n" +
+            "    if ($argument.StartsWith('/DAppVersion=')) { $appVersion = $argument.Substring('/DAppVersion='.Length) }\r\n" +
+            "    if ($argument.StartsWith('/DOutputDir=')) { $outputDir = $argument.Substring('/DOutputDir='.Length) }\r\n" +
+            "}\r\n" +
+            "if ([string]::IsNullOrWhiteSpace($appVersion) -or [string]::IsNullOrWhiteSpace($outputDir)) { exit 1 }\r\n" +
+            "New-Item -ItemType Directory -Path $outputDir -Force | Out-Null\r\n" +
+            "Set-Content -LiteralPath (Join-Path $outputDir \"NWSHelper-Setup-$appVersion.exe\") -Value 'fake-installer'\r\n");
+
+        File.WriteAllText(
+            fakeIsccPath,
+            "@echo off\r\n" +
+            "pwsh -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fake-iscc-inner.ps1\" %*\r\n" +
+            "exit /b %ERRORLEVEL%\r\n");
+
+        try
+        {
+            var output = RunPowerShellScript(
+                scriptName: "package-gui-distribution.ps1",
+                arguments:
+                [
+                    "-PublishDirectory", publishDirectory,
+                    "-Version", "1.2.3",
+                    "-InstallerOutputDirectory", installerDirectory,
+                    "-MsixOutputDirectory", msixDirectory,
+                    "-ChecksumArtifactsPath", Path.Combine(root, "release"),
+                    "-IsccPath", fakeIsccPath,
+                    "-SkipMsix"
+                ]);
+
+            Assert.Equal("Package", output["Mode"]);
+            Assert.Equal("Skipped", output["MsixMode"]);
+            Assert.True(File.Exists(output["InstallerPath"]), $"Expected installer at {output["InstallerPath"]}");
+            Assert.False(Directory.Exists(msixDirectory) && Directory.EnumerateFiles(msixDirectory, "*.msix").Any(), "Did not expect an MSIX when SkipMsix is used.");
+
+            var checksumContents = File.ReadAllText(output["ChecksumFile"]);
+            Assert.Contains("installer/NWSHelper-Setup-1.2.3.exe", checksumContents, StringComparison.Ordinal);
+            Assert.DoesNotContain("msix/", checksumContents, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     private static Dictionary<string, string> RunPowerShellScript(string scriptName, IReadOnlyList<string> arguments)
     {
         var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", scriptName);
