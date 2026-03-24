@@ -523,6 +523,7 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.build-package-bundle.outputs.version }}
       IS_PRERELEASE: ${{ needs.build-package-bundle.outputs.is_prerelease }}
       INCLUDE_MSIX_IN_RELEASE: ${{ needs.build-package-bundle.outputs.include_msix_in_release }}
@@ -584,10 +585,10 @@ jobs:
             }
           }
 
-          gh release view $tag *> $null
+          gh release view $tag --repo $env:GH_REPO *> $null
           $releaseExists = $LASTEXITCODE -eq 0
           if (-not $releaseExists) {
-            $createArguments = @('release', 'create', $tag, '--target', $env:SOURCE_SHA, '--title', $releaseTitle, '--notes', $releaseNotes)
+            $createArguments = @('release', 'create', $tag, '--repo', $env:GH_REPO, '--target', $env:SOURCE_SHA, '--title', $releaseTitle, '--notes', $releaseNotes)
 
             if ($isPrerelease) {
               $createArguments += '--prerelease'
@@ -618,7 +619,7 @@ jobs:
             throw "Unable to update GitHub Release metadata for tag $tag."
           }
 
-          gh release upload $tag $assets --clobber
+          gh release upload $tag $assets --repo $env:GH_REPO --clobber
           if ($LASTEXITCODE -ne 0) {
             throw "gh release upload failed for tag $tag with exit code $LASTEXITCODE."
           }

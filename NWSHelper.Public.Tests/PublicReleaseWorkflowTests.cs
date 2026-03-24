@@ -23,6 +23,9 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("& ./scripts/package-gui-distribution.ps1 @packagingParameters", workflow, StringComparison.Ordinal);
         Assert.Contains("if ($env:INCLUDE_MSIX_IN_RELEASE -eq 'true')", workflow, StringComparison.Ordinal);
         Assert.Contains("if ('${{ steps.msix-policy.outputs.build_msix_package }}' -eq 'true')", workflow, StringComparison.Ordinal);
+        Assert.Contains("GH_REPO: ${{ github.repository }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("gh release view $tag --repo $env:GH_REPO", workflow, StringComparison.Ordinal);
+        Assert.Contains("gh release upload $tag $assets --repo $env:GH_REPO --clobber", workflow, StringComparison.Ordinal);
     }
 
     private static string GetRepositoryRoot()
