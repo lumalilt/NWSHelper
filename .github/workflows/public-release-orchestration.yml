@@ -392,35 +392,33 @@ jobs:
           MSIX_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/msix
           MSIX_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_SIGNING_CERTIFICATE_PASSWORD }}
         run: |
-          $arguments = @(
-            '-PublishDirectory', $env:GUI_PUBLISH_DIR,
-            '-Version', $env:VERSION,
-            '-InstallerOutputDirectory', $env:INSTALLER_DIR,
-            '-MsixOutputDirectory', $env:MSIX_DIR,
-            '-ChecksumArtifactsPath', $env:RELEASE_ROOT
-          )
+          $packagingParameters = @{
+            PublishDirectory = $env:GUI_PUBLISH_DIR
+            Version = $env:VERSION
+            InstallerOutputDirectory = $env:INSTALLER_DIR
+            MsixOutputDirectory = $env:MSIX_DIR
+            ChecksumArtifactsPath = $env:RELEASE_ROOT
+          }
 
           if ('${{ steps.msix-policy.outputs.build_msix_package }}' -eq 'true') {
-            $arguments += @(
-              '-PackageIdentityName', $env:MSIX_PACKAGE_IDENTITY_NAME,
-              '-PackageDisplayName', $env:MSIX_PACKAGE_DISPLAY_NAME,
-              '-PackagePublisher', $env:MSIX_PACKAGE_PUBLISHER,
-              '-PackagePublisherDisplayName', $env:MSIX_PACKAGE_PUBLISHER_DISPLAY_NAME,
-              '-PackageDescription', $env:MSIX_PACKAGE_DESCRIPTION,
-              '-SignMsix',
-              '-CertificatePath', '${{ steps.msix-signing.outputs.certificate_path }}',
-              '-CertificatePassword', $env:MSIX_SIGNING_CERTIFICATE_PASSWORD
-            )
+            $packagingParameters.PackageIdentityName = $env:MSIX_PACKAGE_IDENTITY_NAME
+            $packagingParameters.PackageDisplayName = $env:MSIX_PACKAGE_DISPLAY_NAME
+            $packagingParameters.PackagePublisher = $env:MSIX_PACKAGE_PUBLISHER
+            $packagingParameters.PackagePublisherDisplayName = $env:MSIX_PACKAGE_PUBLISHER_DISPLAY_NAME
+            $packagingParameters.PackageDescription = $env:MSIX_PACKAGE_DESCRIPTION
+            $packagingParameters.SignMsix = $true
+            $packagingParameters.CertificatePath = '${{ steps.msix-signing.outputs.certificate_path }}'
+            $packagingParameters.CertificatePassword = $env:MSIX_SIGNING_CERTIFICATE_PASSWORD
 
             if (-not [string]::IsNullOrWhiteSpace($env:MSIX_SIGNING_TIMESTAMP_URL)) {
-              $arguments += @('-TimestampServerUrl', $env:MSIX_SIGNING_TIMESTAMP_URL)
+              $packagingParameters.TimestampServerUrl = $env:MSIX_SIGNING_TIMESTAMP_URL
             }
           }
           else {
-            $arguments += '-SkipMsix'
+            $packagingParameters.SkipMsix = $true
           }
 
-          & ./scripts/package-gui-distribution.ps1 @arguments
+          & ./scripts/package-gui-distribution.ps1 @packagingParameters
 
       - name: Create portable zip archives
         shell: pwsh
