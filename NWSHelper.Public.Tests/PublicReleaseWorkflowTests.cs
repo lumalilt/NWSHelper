@@ -29,6 +29,13 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("Get-WorkflowRunsForSha 'public-core-compatibility.yml' $sourceSha", workflow, StringComparison.Ordinal);
         Assert.Contains("public-core-compatibility failed for SHA $sourceSha", workflow, StringComparison.Ordinal);
         Assert.Contains("required successful public-ci and public-core-compatibility", workflow, StringComparison.Ordinal);
+        Assert.Contains("Stage published release assets for metadata generation", workflow, StringComparison.Ordinal);
+        Assert.Contains("RELEASE_METADATA_STAGING_DIR", workflow, StringComparison.Ordinal);
+        Assert.Contains("Copy-Item -LiteralPath $assetPath -Destination (Join-Path $resolvedReleaseMetadataStagingDirectory (Split-Path -Path $assetPath -Leaf)) -Force", workflow, StringComparison.Ordinal);
+        Assert.Contains("./scripts/generate-artifact-checksums.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("Copy-Item -LiteralPath $checksumsPath -Destination (Join-Path $resolvedReleaseMetadataStagingDirectory 'checksums.sha256') -Force", workflow, StringComparison.Ordinal);
+        Assert.Contains("./scripts/generate-update-metadata.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("-ArtifactsPath $resolvedReleaseMetadataStagingDirectory", workflow, StringComparison.Ordinal);
     }
 
     private static string GetRepositoryRoot()

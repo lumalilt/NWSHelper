@@ -452,24 +452,6 @@ jobs:
           Compress-Archive -Path (Join-Path $env:GUI_PUBLISH_DIR '*') -DestinationPath $guiPortableZip -CompressionLevel Optimal
           Compress-Archive -Path (Join-Path $env:CLI_PUBLISH_DIR '*') -DestinationPath $cliPortableZip -CompressionLevel Optimal
 
-      - name: Generate update metadata
-        shell: pwsh
-        env:
-          VERSION: ${{ steps.compute.outputs.Version }}
-          RELEASE_ROOT: artifacts/release/${{ steps.compute.outputs.Version }}
-          UPDATE_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/update
-        run: |
-          $tag = if ([string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) { "v$env:VERSION" } else { $env:RELEASE_TAG }
-          $resolvedUpdateDirectory = [System.IO.Path]::GetFullPath($env:UPDATE_DIR)
-          $metadataPath = Join-Path $resolvedUpdateDirectory 'update-metadata.json'
-          $downloadBaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag"
-
-          ./scripts/generate-update-metadata.ps1 `
-            -ArtifactsPath $env:RELEASE_ROOT `
-            -Version $env:VERSION `
-            -OutputFile $metadataPath `
-            -BaseDownloadUrl $downloadBaseUrl
-
       - name: Generate NetSparkle appcast
         if: ${{ steps.release-channel.outputs.is_prerelease != 'true' }}
         shell: pwsh
@@ -506,6 +488,96 @@ jobs:
           if (-not (Test-Path -LiteralPath $signaturePath -PathType Leaf)) {
             throw "Expected appcast signature file was not generated: $signaturePath"
           }
+
+      - name: Stage published release assets for metadata generation
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          RELEASE_ROOT: artifacts/release/${{ steps.compute.outputs.Version }}
+          UPDATE_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/update
+          INCLUDE_MSIX_IN_RELEASE: ${{ steps.msix-policy.outputs.include_msix_in_release }}
+          IS_PRERELEASE: ${{ steps.release-channel.outputs.is_prerelease }}
+          RELEASE_METADATA_STAGING_DIR: ${{ runner.temp }}/public-release-metadata/${{ steps.compute.outputs.Version }}
+        run: |
+          $resolvedReleaseRoot = [System.IO.Path]::GetFullPath($env:RELEASE_ROOT)
+          $resolvedUpdateDirectory = [System.IO.Path]::GetFullPath($env:UPDATE_DIR)
+          $resolvedReleaseMetadataStagingDirectory = [System.IO.Path]::GetFullPath($env:RELEASE_METADATA_STAGING_DIR)
+
+          if (Test-Path -LiteralPath $resolvedReleaseMetadataStagingDirectory) {
+            Remove-Item -LiteralPath $resolvedReleaseMetadataStagingDirectory -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Path $resolvedReleaseMetadataStagingDirectory -Force | Out-Null
+
+          $assetsToStage = @(
+            (Join-Path $resolvedReleaseRoot "installer/NWSHelper-Setup-$env:VERSION.exe"),
+            (Join-Path $resolvedReleaseRoot "portable/NWSHelper-Cli-win-x64-$env:VERSION.zip"),
+            (Join-Path $resolvedReleaseRoot "portable/NWSHelper-Gui-win-x64-$env:VERSION.zip")
+          )
+
+          if ($env:INCLUDE_MSIX_IN_RELEASE -eq 'true') {
+            $msixAsset = Get-ChildItem -LiteralPath (Join-Path $resolvedReleaseRoot 'msix') -File -Filter 'NWSHelper-*.msix' |
+              Sort-Object Name |
+              Select-Object -First 1
+
+            if ($null -eq $msixAsset) {
+              throw "Could not find MSIX asset under $(Join-Path $resolvedReleaseRoot 'msix')."
+            }
+
+            $assetsToStage += $msixAsset.FullName
+          }
+
+          if ($env:IS_PRERELEASE -ne 'true') {
+            $assetsToStage += @(
+              (Join-Path $resolvedUpdateDirectory 'appcast.xml'),
+              (Join-Path $resolvedUpdateDirectory 'appcast.xml.signature')
+            )
+          }
+
+          foreach ($assetPath in $assetsToStage) {
+            if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
+              throw "Expected release asset is missing before metadata generation: $assetPath"
+            }
+
+            Copy-Item -LiteralPath $assetPath -Destination (Join-Path $resolvedReleaseMetadataStagingDirectory (Split-Path -Path $assetPath -Leaf)) -Force
+          }
+
+      - name: Generate release checksums
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          RELEASE_ROOT: artifacts/release/${{ steps.compute.outputs.Version }}
+          RELEASE_METADATA_STAGING_DIR: ${{ runner.temp }}/public-release-metadata/${{ steps.compute.outputs.Version }}
+        run: |
+          $resolvedReleaseRoot = [System.IO.Path]::GetFullPath($env:RELEASE_ROOT)
+          $resolvedReleaseMetadataStagingDirectory = [System.IO.Path]::GetFullPath($env:RELEASE_METADATA_STAGING_DIR)
+          $checksumsPath = Join-Path $resolvedReleaseRoot 'checksums.sha256'
+
+          ./scripts/generate-artifact-checksums.ps1 `
+            -ArtifactsPath $resolvedReleaseMetadataStagingDirectory `
+            -Algorithm SHA256 `
+            -OutputFile $checksumsPath
+
+          Copy-Item -LiteralPath $checksumsPath -Destination (Join-Path $resolvedReleaseMetadataStagingDirectory 'checksums.sha256') -Force
+
+      - name: Generate update metadata
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.compute.outputs.Version }}
+          UPDATE_DIR: artifacts/release/${{ steps.compute.outputs.Version }}/update
+          RELEASE_METADATA_STAGING_DIR: ${{ runner.temp }}/public-release-metadata/${{ steps.compute.outputs.Version }}
+        run: |
+          $tag = if ([string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) { "v$env:VERSION" } else { $env:RELEASE_TAG }
+          $resolvedUpdateDirectory = [System.IO.Path]::GetFullPath($env:UPDATE_DIR)
+          $resolvedReleaseMetadataStagingDirectory = [System.IO.Path]::GetFullPath($env:RELEASE_METADATA_STAGING_DIR)
+          $metadataPath = Join-Path $resolvedUpdateDirectory 'update-metadata.json'
+          $downloadBaseUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag"
+
+          ./scripts/generate-update-metadata.ps1 `
+            -ArtifactsPath $resolvedReleaseMetadataStagingDirectory `
+            -Version $env:VERSION `
+            -OutputFile $metadataPath `
+            -BaseDownloadUrl $downloadBaseUrl
 
       - name: Export bundle metadata
         id: bundle-metadata
