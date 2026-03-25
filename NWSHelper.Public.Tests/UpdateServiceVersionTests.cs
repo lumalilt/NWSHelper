@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using NWSHelper.Gui.Services;
 using Xunit;
@@ -14,6 +16,15 @@ public class UpdateServiceVersionTests
     public void NormalizeForUpdateComparison_StripsOnlyBuildMetadata(string input, string expected)
     {
         Assert.Equal(expected, AppVersionProvider.NormalizeForUpdateComparison(input));
+    }
+
+    [Theory]
+    [InlineData("https://github.com/dmealo/NWSHelper/releases/latest/download/appcast.xml", "https://github.com/lumalilt/NWSHelper/releases/latest/download/appcast.xml")]
+    [InlineData("https://github.com/lumalilt/NWSHelper/releases/latest/download/appcast.xml", "https://github.com/lumalilt/NWSHelper/releases/latest/download/appcast.xml")]
+    [InlineData("https://example.invalid/appcast.xml", "https://example.invalid/appcast.xml")]
+    public void NormalizeAppcastUrl_RewritesOnlyLegacyPrivateGitHubFeed(string input, string expected)
+    {
+        Assert.Equal(expected, NetSparkleUpdateService.NormalizeAppcastUrl(input));
     }
 
     [Fact]
@@ -50,6 +61,53 @@ public class UpdateServiceVersionTests
         finally
         {
             service.Dispose();
+        }
+    }
+
+    [Fact]
+    public void ResolveAppcastUrl_RewritesLegacyPrivateFeedFromEnvironmentOverride()
+    {
+        using var appcastVariable = new EnvironmentVariableScope(
+            "NWSHELPER_APPCAST_URL",
+            "https://github.com/dmealo/NWSHelper/releases/latest/download/appcast.xml");
+
+        var tempDirectory = Path.Combine(Path.GetTempPath(), $"NWSHelperPublicUpdateTests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDirectory);
+        var configPath = Path.Combine(tempDirectory, "gui-settings.json");
+
+        try
+        {
+            using var service = new NetSparkleUpdateService(filePath: configPath, currentVersionOverride: "1.0.14+build.202603251822.30.sha.1150656a");
+            var resolveAppcastUrl = typeof(NetSparkleUpdateService).GetMethod("ResolveAppcastUrl", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(resolveAppcastUrl);
+
+            var resolved = resolveAppcastUrl!.Invoke(service, Array.Empty<object>()) as string;
+            Assert.Equal("https://github.com/lumalilt/NWSHelper/releases/latest/download/appcast.xml", resolved);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        }
+    }
+
+    private sealed class EnvironmentVariableScope : IDisposable
+    {
+        private readonly string name;
+        private readonly string? previousValue;
+
+        public EnvironmentVariableScope(string name, string? value)
+        {
+            this.name = name;
+            previousValue = Environment.GetEnvironmentVariable(name);
+            Environment.SetEnvironmentVariable(name, value);
+        }
+
+        public void Dispose()
+        {
+            Environment.SetEnvironmentVariable(name, previousValue);
         }
     }
 }

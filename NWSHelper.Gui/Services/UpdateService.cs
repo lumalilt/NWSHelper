@@ -50,6 +50,9 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
 {
     private const string AppcastUrlEnvironmentVariable = "NWSHELPER_APPCAST_URL";
     private const string AppcastPublicKeyEnvironmentVariable = "NWSHELPER_APPCAST_PUBLIC_KEY";
+    private const string LegacyPrivateGitHubOwner = "dmealo";
+    private const string PublicGitHubOwner = "lumalilt";
+    private const string RepositoryName = "NWSHelper";
     private static readonly TimeSpan StartupCheckFrequency = TimeSpan.FromHours(12);
     private static readonly PropertyInfo? SparkleUpdaterConfigurationProperty = typeof(SparkleUpdater).GetProperty("Configuration", BindingFlags.Instance | BindingFlags.Public);
     private static readonly PropertyInfo? SparkleUpdaterInstalledVersionProperty = SparkleUpdaterConfigurationProperty?.PropertyType.GetProperty("InstalledVersion", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -211,10 +214,46 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
         var configuredAppcastUrl = Environment.GetEnvironmentVariable(AppcastUrlEnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(configuredAppcastUrl))
         {
-            updateSettings.AppcastUrl = configuredAppcastUrl.Trim();
+            updateSettings.AppcastUrl = NormalizeAppcastUrl(configuredAppcastUrl);
         }
 
-        return updateSettings.AppcastUrl?.Trim() ?? string.Empty;
+        updateSettings.AppcastUrl = NormalizeAppcastUrl(updateSettings.AppcastUrl);
+        return updateSettings.AppcastUrl;
+    }
+
+    public static string NormalizeAppcastUrl(string? appcastUrl)
+    {
+        if (string.IsNullOrWhiteSpace(appcastUrl))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = appcastUrl.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            return trimmed;
+        }
+
+        if (!string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        var pathSegments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (pathSegments.Length < 2 ||
+            !string.Equals(pathSegments[0], LegacyPrivateGitHubOwner, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(pathSegments[1], RepositoryName, StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        pathSegments[0] = PublicGitHubOwner;
+        var builder = new UriBuilder(uri)
+        {
+            Path = "/" + string.Join('/', pathSegments)
+        };
+
+        return builder.Uri.AbsoluteUri;
     }
 
     private string ResolveAppcastPublicKey()
