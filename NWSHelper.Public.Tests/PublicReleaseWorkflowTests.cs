@@ -36,9 +36,9 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("Copy-Item -LiteralPath $checksumsPath -Destination (Join-Path $resolvedReleaseMetadataStagingDirectory 'checksums.sha256') -Force", workflow, StringComparison.Ordinal);
         Assert.Contains("./scripts/generate-update-metadata.ps1", workflow, StringComparison.Ordinal);
         Assert.Contains("-ArtifactsPath $resolvedReleaseMetadataStagingDirectory", workflow, StringComparison.Ordinal);
-        Assert.Contains("$computeVersionArguments = @()", workflow, StringComparison.Ordinal);
-        Assert.Contains("$computeVersionArguments += '-TagBuild'", workflow, StringComparison.Ordinal);
-        Assert.Contains("./scripts/compute-version.ps1 @computeVersionArguments", workflow, StringComparison.Ordinal);
+        Assert.Contains("./scripts/compute-version.ps1 -TagBuild", workflow, StringComparison.Ordinal);
+        Assert.Contains("./scripts/compute-version.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("else {", workflow, StringComparison.Ordinal);
     }
 
     private static string GetRepositoryRoot()

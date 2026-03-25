@@ -256,12 +256,12 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.release-gate.outputs.release_tag }}
         run: |
-          $computeVersionArguments = @()
           if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) {
-            $computeVersionArguments += '-TagBuild'
+            ./scripts/compute-version.ps1 -TagBuild
           }
-
-          ./scripts/compute-version.ps1 @computeVersionArguments
+          else {
+            ./scripts/compute-version.ps1
+          }
 
       - name: Determine release channel
         id: release-channel
