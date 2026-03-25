@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using NetSparkleUpdater;
@@ -50,10 +51,13 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
     private const string AppcastUrlEnvironmentVariable = "NWSHELPER_APPCAST_URL";
     private const string AppcastPublicKeyEnvironmentVariable = "NWSHELPER_APPCAST_PUBLIC_KEY";
     private static readonly TimeSpan StartupCheckFrequency = TimeSpan.FromHours(12);
+    private static readonly PropertyInfo? SparkleUpdaterConfigurationProperty = typeof(SparkleUpdater).GetProperty("Configuration", BindingFlags.Instance | BindingFlags.Public);
+    private static readonly PropertyInfo? SparkleUpdaterInstalledVersionProperty = SparkleUpdaterConfigurationProperty?.PropertyType.GetProperty("InstalledVersion", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
     private readonly GuiConfigurationStore configurationStore;
     private readonly GuiUpdateSettings updateSettings;
     private readonly object updaterSync = new();
+    private readonly string installedComparisonVersion;
 
     private SparkleUpdater? sparkleUpdater;
     private string? sparkleUpdaterAppcastUrl;
@@ -61,15 +65,19 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
     private bool updateLoopStarted;
     private bool disposed;
 
-    public NetSparkleUpdateService(string? filePath = null, IStoreRuntimeContextProvider? storeRuntimeContextProvider = null)
+    public NetSparkleUpdateService(string? filePath = null, IStoreRuntimeContextProvider? storeRuntimeContextProvider = null, string? currentVersionOverride = null)
     {
         configurationStore = new GuiConfigurationStore(filePath);
         updateSettings = LoadSettings();
         var storeRuntimeContext = (storeRuntimeContextProvider ?? new StoreRuntimeContextProvider()).GetCurrent();
         IsStoreInstall = storeRuntimeContext.IsStoreInstall;
+        CurrentVersion = string.IsNullOrWhiteSpace(currentVersionOverride)
+            ? AppVersionProvider.GetDisplayVersion()
+            : currentVersionOverride.Trim();
+        installedComparisonVersion = AppVersionProvider.NormalizeForUpdateComparison(CurrentVersion);
     }
 
-    public string CurrentVersion { get; } = AppVersionProvider.GetDisplayVersion();
+    public string CurrentVersion { get; }
 
     public bool IsStoreInstall { get; }
 
@@ -254,11 +262,29 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
                 UseNotificationToast = false
             };
 
+            ApplyInstalledVersionOverride(updater, installedComparisonVersion);
+
             sparkleUpdater = updater;
             sparkleUpdaterAppcastUrl = appcastUrl;
             sparkleUpdaterAppcastPublicKey = appcastPublicKey;
             return updater;
         }
+    }
+
+    private static void ApplyInstalledVersionOverride(SparkleUpdater updater, string installedVersion)
+    {
+        if (string.IsNullOrWhiteSpace(installedVersion))
+        {
+            return;
+        }
+
+        var configuration = SparkleUpdaterConfigurationProperty?.GetValue(updater);
+        if (configuration is null || SparkleUpdaterInstalledVersionProperty is null)
+        {
+            return;
+        }
+
+        SparkleUpdaterInstalledVersionProperty.SetValue(configuration, installedVersion);
     }
 
     private async Task EnsureUpdateLoopStartedAsync(SparkleUpdater updater, CancellationToken cancellationToken)

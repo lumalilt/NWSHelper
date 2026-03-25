@@ -17,4 +17,26 @@ public static class AppVersionProvider
         var version = assembly.GetName().Version;
         return version is null ? "0.0.0" : version.ToString();
     }
+
+    public static string GetUpdateComparisonVersion()
+    {
+        return NormalizeForUpdateComparison(GetDisplayVersion());
+    }
+
+    public static string NormalizeForUpdateComparison(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return "0.0.0";
+        }
+
+        var trimmed = version.Trim();
+        var buildMetadataSeparatorIndex = trimmed.IndexOf('+', StringComparison.Ordinal);
+        if (buildMetadataSeparatorIndex <= 0)
+        {
+            return trimmed;
+        }
+
+        return trimmed[..buildMetadataSeparatorIndex];
+    }
 }
