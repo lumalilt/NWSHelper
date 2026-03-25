@@ -77,7 +77,7 @@ public class ComputeVersionScriptTests
     }
 
     [Fact]
-    public void ComputeVersionScript_NonTagBuild_OutputsCiVersionAndMetadata()
+    public void ComputeVersionScript_NonTagBuild_OutputsDateStampedPrereleaseVersionAndMetadata()
     {
         var version = GetCurrentVersionInfo();
         var githubOutputPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
@@ -98,7 +98,9 @@ public class ComputeVersionScriptTests
             Assert.Equal("42", output["RunNumber"]);
             Assert.Equal("01234567", output["ShortSha"]);
             Assert.Equal("false", output["IsTagBuild"]);
-            Assert.Matches($"^{Regex.Escape(version.Prefix)}-ci\\.\\d{{8}}\\.t\\d{{4}}\\.42$", output["Version"]);
+            Assert.Matches($"^{Regex.Escape(version.Prefix)}-\\d{{8}}\\.\\d+\\.42$", output["Version"]);
+            Assert.DoesNotContain("ci", output["Version"]);
+            Assert.DoesNotContain(".t", output["Version"]);
             Assert.Matches($"^{version.Major}\\.{version.Minor}\\.\\d{{5}}\\.\\d+$", output["FileVersion"]);
             Assert.Matches($"^{Regex.Escape(version.Prefix)}\\+build\\.\\d{{12}}\\.42\\.sha\\.01234567$", output["InformationalVersion"]);
             Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", output["UtcNow"]);
@@ -131,24 +133,24 @@ public class ComputeVersionScriptTests
             });
 
         Assert.Equal("true", output["IsTagBuild"]);
-            Assert.Equal(version.Prefix, output["Version"]);
+        Assert.Equal(version.Prefix, output["Version"]);
     }
 
     [Fact]
     public void ComputeVersionScript_GitHubTagRef_DetectsTagBuild()
     {
-            var version = GetCurrentVersionInfo();
+        var version = GetCurrentVersionInfo();
         var output = RunComputeVersionScript(
             tagBuild: false,
             environment: new Dictionary<string, string>
             {
-                    ["GITHUB_REF"] = $"refs/tags/v{version.Prefix}",
+                ["GITHUB_REF"] = $"refs/tags/v{version.Prefix}",
                 ["GITHUB_RUN_NUMBER"] = "99",
                 ["GITHUB_SHA"] = "fedcba9876543210fedcba9876543210fedcba98"
             });
 
         Assert.Equal("true", output["IsTagBuild"]);
-            Assert.Equal(version.Prefix, output["Version"]);
+        Assert.Equal(version.Prefix, output["Version"]);
     }
 
     [Fact]

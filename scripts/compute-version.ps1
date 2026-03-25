@@ -136,7 +136,7 @@ $patch = $versionData.Patch
 
 $utcNow = (Get-Date).ToUniversalTime()
 $datePart = $utcNow.ToString('yyyyMMdd')
-$timePart = $utcNow.ToString('HHmm')
+$timePart = ([int]$utcNow.ToString('HHmmss')).ToString()
 $dateTimePart = $utcNow.ToString('yyyyMMddHHmm')
 $yyddd = '{0}{1:000}' -f $utcNow.ToString('yy'), $utcNow.DayOfYear
 
@@ -150,9 +150,9 @@ if ($isTagBuild) {
     $version = $versionPrefix
 }
 else {
-    # Prefix the time segment to avoid numeric identifiers with leading zeros,
-    # which NuGet rejects for SemVer prerelease labels.
-    $version = "$versionPrefix-ci.$datePart.t$timePart.$runNumber"
+    # Keep prerelease identifiers semver-safe while dropping the explicit ci/t labels.
+    # Casting the UTC time to an integer removes leading zeros from the numeric identifier.
+    $version = "$versionPrefix-$datePart.$timePart.$runNumber"
 }
 
 $fileVersion = "$major.$minor.$yyddd.$fileVersionRun"
