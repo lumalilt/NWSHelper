@@ -3,9 +3,14 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Platform;
 using NetSparkleUpdater;
 using NetSparkleUpdater.Enums;
 using NetSparkleUpdater.SignatureVerifiers;
+using NetSparkleUpdater.UI.Avalonia;
 
 namespace NWSHelper.Gui.Services;
 
@@ -53,6 +58,7 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
     private const string LegacyPrivateGitHubOwner = "dmealo";
     private const string PublicGitHubOwner = "lumalilt";
     private const string RepositoryName = "NWSHelper";
+    private static readonly Uri UpdateIconAssetUri = new("avares://NWSHelper.Gui/Assets/nwsh_multi.ico");
     private static readonly TimeSpan StartupCheckFrequency = TimeSpan.FromHours(12);
     private static readonly PropertyInfo? SparkleUpdaterConfigurationProperty = typeof(SparkleUpdater).GetProperty("Configuration", BindingFlags.Instance | BindingFlags.Public);
     private static readonly PropertyInfo? SparkleUpdaterInstalledVersionProperty = SparkleUpdaterConfigurationProperty?.PropertyType.GetProperty("InstalledVersion", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -167,6 +173,7 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
         try
         {
             var updater = GetOrCreateSparkleUpdater(appcastUrl, appcastPublicKey);
+            var interactiveUiAvailable = updater.UIFactory is not null;
             if (fromStartupPolicy)
             {
                 await EnsureUpdateLoopStartedAsync(updater, cancellationToken).ConfigureAwait(false);
@@ -181,7 +188,7 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
             var status = updateInfo?.Status ?? UpdateStatus.CouldNotDetermine;
             var isUpdateAvailable = status == UpdateStatus.UpdateAvailable && latest is not null;
 
-            var message = BuildStatusMessage(status, latest);
+            var message = BuildStatusMessage(status, latest, fromStartupPolicy, interactiveUiAvailable);
             SaveSettings(message);
 
             return new UpdateCheckResult
@@ -298,7 +305,8 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
             var updater = new SparkleUpdater(appcastUrl, signatureVerifier)
             {
                 CheckServerFileName = false,
-                UseNotificationToast = false
+                UseNotificationToast = false,
+                UIFactory = CreateUiFactoryIfAvailable()
             };
 
             ApplyInstalledVersionOverride(updater, installedComparisonVersion);
@@ -307,6 +315,35 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
             sparkleUpdaterAppcastUrl = appcastUrl;
             sparkleUpdaterAppcastPublicKey = appcastPublicKey;
             return updater;
+        }
+    }
+
+    private static UIFactory? CreateUiFactoryIfAvailable()
+    {
+        if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime)
+        {
+            return null;
+        }
+
+        var icon = TryLoadUpdateIcon();
+        return icon is null ? new UIFactory() : new UIFactory(icon);
+    }
+
+    private static WindowIcon? TryLoadUpdateIcon()
+    {
+        try
+        {
+            if (!AssetLoader.Exists(UpdateIconAssetUri))
+            {
+                return null;
+            }
+
+            using var stream = AssetLoader.Open(UpdateIconAssetUri);
+            return new WindowIcon(stream);
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -364,11 +401,19 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
         }
     }
 
-    private static string BuildStatusMessage(UpdateStatus status, AppCastItem? latest)
+    internal static string BuildStatusMessage(UpdateStatus status, AppCastItem? latest, bool fromStartupPolicy, bool interactiveUiAvailable)
     {
         var latestVersion = latest?.Version ?? latest?.ShortVersion;
         return status switch
         {
+            UpdateStatus.UpdateAvailable when !fromStartupPolicy && interactiveUiAvailable && !string.IsNullOrWhiteSpace(latestVersion)
+                => $"Update review opened for {latestVersion}. Follow the updater prompts to download and install.",
+            UpdateStatus.UpdateAvailable when !fromStartupPolicy && interactiveUiAvailable
+                => "Update review opened. Follow the updater prompts to download and install.",
+            UpdateStatus.UpdateAvailable when !fromStartupPolicy && !interactiveUiAvailable && !string.IsNullOrWhiteSpace(latestVersion)
+                => $"Update available: {latestVersion}.",
+            UpdateStatus.UpdateAvailable when !fromStartupPolicy && !interactiveUiAvailable
+                => "Update available.",
             UpdateStatus.UpdateAvailable when !string.IsNullOrWhiteSpace(latestVersion)
                 => $"Update available: {latestVersion}. Use Check for Updates to review and install.",
             UpdateStatus.UpdateAvailable

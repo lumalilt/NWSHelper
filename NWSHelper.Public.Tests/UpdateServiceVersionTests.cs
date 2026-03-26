@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using NetSparkleUpdater;
+using NetSparkleUpdater.Enums;
 using NWSHelper.Gui.Services;
 using Xunit;
 
@@ -91,6 +93,60 @@ public class UpdateServiceVersionTests
                 Directory.Delete(tempDirectory, recursive: true);
             }
         }
+    }
+
+    [Fact]
+    public void BuildStatusMessage_ForStartupUpdateAvailable_PromptsManualReview()
+    {
+        var latest = new AppCastItem
+        {
+            Version = "1.0.16",
+            ShortVersion = "1.0.16"
+        };
+
+        var message = NetSparkleUpdateService.BuildStatusMessage(
+            UpdateStatus.UpdateAvailable,
+            latest,
+            fromStartupPolicy: true,
+            interactiveUiAvailable: true);
+
+        Assert.Equal("Update available: 1.0.16. Use Check for Updates to review and install.", message);
+    }
+
+    [Fact]
+    public void BuildStatusMessage_ForManualUpdateWithInteractiveUi_ReflectsOpenedReview()
+    {
+        var latest = new AppCastItem
+        {
+            Version = "1.0.16",
+            ShortVersion = "1.0.16"
+        };
+
+        var message = NetSparkleUpdateService.BuildStatusMessage(
+            UpdateStatus.UpdateAvailable,
+            latest,
+            fromStartupPolicy: false,
+            interactiveUiAvailable: true);
+
+        Assert.Equal("Update review opened for 1.0.16. Follow the updater prompts to download and install.", message);
+    }
+
+    [Fact]
+    public void BuildStatusMessage_ForManualUpdateWithoutInteractiveUi_DoesNotPromisePromptFlow()
+    {
+        var latest = new AppCastItem
+        {
+            Version = "1.0.16",
+            ShortVersion = "1.0.16"
+        };
+
+        var message = NetSparkleUpdateService.BuildStatusMessage(
+            UpdateStatus.UpdateAvailable,
+            latest,
+            fromStartupPolicy: false,
+            interactiveUiAvailable: false);
+
+        Assert.Equal("Update available: 1.0.16.", message);
     }
 
     private sealed class EnvironmentVariableScope : IDisposable
