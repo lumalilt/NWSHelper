@@ -10,6 +10,8 @@ param(
 
     [string]$OutputDirectory = (Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts') 'installer'),
 
+    [string]$SetupIconPath,
+
     [string]$IsccPath,
 
     [switch]$ValidateOnly
@@ -74,6 +76,28 @@ function Resolve-IsccPath {
     throw 'Inno Setup compiler (ISCC.exe) was not found. Install Inno Setup 6 or pass -IsccPath <path>.'
 }
 
+function Resolve-SetupIconPath {
+    param([string]$ExplicitPath)
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        return Resolve-ExistingFile -Path $ExplicitPath -ErrorMessage "Setup icon '$ExplicitPath' was not found."
+    }
+
+    $repositoryRoot = Split-Path $PSScriptRoot -Parent
+    $candidatePaths = @(
+        (Join-Path $repositoryRoot 'NWSHelper.Gui\Assets\nwsh_multi.ico'),
+        (Join-Path $repositoryRoot 'NWSHelper.Gui\Assets\nwsh_128x128.ico')
+    )
+
+    foreach ($candidate in $candidatePaths) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+
+    throw 'Setup icon asset was not found. Pass -SetupIconPath <path>.'
+}
+
 $resolvedPublishDirectory = Resolve-ExistingDirectory `
     -Path $PublishDirectory `
     -ErrorMessage "Publish directory '$PublishDirectory' does not exist. Run dotnet publish first."
@@ -89,12 +113,14 @@ if (-not (Test-Path -LiteralPath $mainExecutable -PathType Leaf)) {
 
 $resolvedOutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $resolvedOutputDirectory -Force | Out-Null
+$resolvedSetupIconPath = Resolve-SetupIconPath -ExplicitPath $SetupIconPath
 
 if ($ValidateOnly.IsPresent) {
     Write-Output 'Mode=ValidateOnly'
     Write-Output "InnoScriptPath=$resolvedInnoScriptPath"
     Write-Output "PublishDirectory=$resolvedPublishDirectory"
     Write-Output "OutputDirectory=$resolvedOutputDirectory"
+    Write-Output "SetupIconPath=$resolvedSetupIconPath"
     Write-Output "ExpectedInstallerName=NWSHelper-Setup-$Version.exe"
     return
 }
@@ -106,6 +132,7 @@ $arguments = @(
     "/DAppVersion=$Version",
     "/DSourceDir=$resolvedPublishDirectory",
     "/DOutputDir=$resolvedOutputDirectory",
+    "/DSetupIconFile=$resolvedSetupIconPath",
     $resolvedInnoScriptPath
 )
 

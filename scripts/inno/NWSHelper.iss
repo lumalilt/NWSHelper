@@ -10,6 +10,10 @@
   #define OutputDir "."
 #endif
 
+#ifndef SetupIconFile
+  #define SetupIconFile ""
+#endif
+
 #define AppName "NWS Helper"
 #define AppExeName "NWSHelper.Gui.exe"
 
@@ -27,6 +31,7 @@ OutputBaseFilename=NWSHelper-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile={#SetupIconFile}
 UninstallDisplayIcon={app}\{#AppExeName}
 
 [Languages]

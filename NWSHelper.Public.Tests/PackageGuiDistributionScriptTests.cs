@@ -39,6 +39,8 @@ public class PackageGuiDistributionScriptTests
             Assert.Equal("ValidateOnly", output["InstallerMode"]);
             Assert.Equal("ValidateOnly", output["MsixMode"]);
             Assert.Equal("NWSHelper-Setup-1.2.3.exe", output["ExpectedInstallerName"]);
+            Assert.True(File.Exists(output["SetupIconPath"]), $"Expected setup icon at {output["SetupIconPath"]}");
+            Assert.EndsWith(Path.Combine("NWSHelper.Gui", "Assets", "nwsh_multi.ico"), output["SetupIconPath"], StringComparison.OrdinalIgnoreCase);
             Assert.EndsWith(Path.Combine("msix", "NWSHelper-1.2.3.0.msix"), output["ExpectedPackagePath"], StringComparison.OrdinalIgnoreCase);
 
             var checksumFile = output["ChecksumFile"];
@@ -68,6 +70,7 @@ public class PackageGuiDistributionScriptTests
         var msixDirectory = Path.Combine(root, "release", "msix");
         var fakeIsccPath = Path.Combine(root, "fake-iscc.cmd");
         var fakeIsccInnerPath = Path.Combine(root, "fake-iscc-inner.ps1");
+        var isccArgumentsPath = Path.Combine(root, "iscc-args.txt");
         var fakeMakeAppxPath = Path.Combine(root, "fake-makeappx.cmd");
 
         Directory.CreateDirectory(publishDirectory);
@@ -77,6 +80,7 @@ public class PackageGuiDistributionScriptTests
         File.WriteAllText(
             fakeIsccInnerPath,
             "param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)\r\n" +
+            "$Arguments | Set-Content -LiteralPath $env:ISCC_ARGS_PATH\r\n" +
             "$appVersion = $null\r\n" +
             "$outputDir = $null\r\n" +
             "foreach ($argument in $Arguments) {\r\n" +
@@ -90,6 +94,7 @@ public class PackageGuiDistributionScriptTests
         File.WriteAllText(
             fakeIsccPath,
             "@echo off\r\n" +
+            "set ISCC_ARGS_PATH=%~dp0iscc-args.txt\r\n" +
             "pwsh -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fake-iscc-inner.ps1\" %*\r\n" +
             "exit /b %ERRORLEVEL%\r\n");
 
@@ -135,6 +140,11 @@ public class PackageGuiDistributionScriptTests
             Assert.True(File.Exists(installerPath), $"Expected installer at {installerPath}");
             Assert.True(File.Exists(msixPath), $"Expected msix at {msixPath}");
             Assert.True(File.Exists(checksumFile), $"Expected checksum file at {checksumFile}");
+            Assert.True(File.Exists(isccArgumentsPath), $"Expected ISCC args capture at {isccArgumentsPath}");
+
+            var isccArguments = File.ReadAllText(isccArgumentsPath);
+            Assert.Contains("/DSetupIconFile=", isccArguments, StringComparison.Ordinal);
+            Assert.Contains("nwsh_multi.ico", isccArguments, StringComparison.OrdinalIgnoreCase);
 
             var checksumContents = File.ReadAllText(checksumFile);
             Assert.Contains("installer/NWSHelper-Setup-1.2.3.exe", checksumContents, StringComparison.Ordinal);

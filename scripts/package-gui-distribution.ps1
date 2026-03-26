@@ -26,6 +26,8 @@ param(
 
     [string]$LogoSourcePath,
 
+    [string]$SetupIconPath,
+
     [string]$IsccPath,
 
     [string]$MakeAppxPath,
@@ -134,17 +136,17 @@ if ($SkipMsix.IsPresent -and $SignMsix.IsPresent) {
 $installerOutputLines =
     if ($ValidateOnly.IsPresent) {
         if (-not [string]::IsNullOrWhiteSpace($IsccPath)) {
-            & $installerScriptPath -PublishDirectory $resolvedPublishDirectory -Version $Version -OutputDirectory $resolvedInstallerOutputDirectory -IsccPath $IsccPath -ValidateOnly
+            & $installerScriptPath -PublishDirectory $resolvedPublishDirectory -Version $Version -OutputDirectory $resolvedInstallerOutputDirectory -SetupIconPath $SetupIconPath -IsccPath $IsccPath -ValidateOnly
         }
         else {
-            & $installerScriptPath -PublishDirectory $resolvedPublishDirectory -Version $Version -OutputDirectory $resolvedInstallerOutputDirectory -ValidateOnly
+            & $installerScriptPath -PublishDirectory $resolvedPublishDirectory -Version $Version -OutputDirectory $resolvedInstallerOutputDirectory -SetupIconPath $SetupIconPath -ValidateOnly
         }
     }
     elseif (-not [string]::IsNullOrWhiteSpace($IsccPath)) {
-        & $installerScriptPath -PublishDirectory $resolvedPublishDirectory -Version $Version -OutputDirectory $resolvedInstallerOutputDirectory -IsccPath $IsccPath
+        & $installerScriptPath -PublishDirectory $resolvedPublishDirectory -Version $Version -OutputDirectory $resolvedInstallerOutputDirectory -SetupIconPath $SetupIconPath -IsccPath $IsccPath
     }
     else {
-        & $installerScriptPath -PublishDirectory $resolvedPublishDirectory -Version $Version -OutputDirectory $resolvedInstallerOutputDirectory
+        & $installerScriptPath -PublishDirectory $resolvedPublishDirectory -Version $Version -OutputDirectory $resolvedInstallerOutputDirectory -SetupIconPath $SetupIconPath
     }
 
 $installerOutputLines = $installerOutputLines | ForEach-Object { $_.ToString() }
@@ -239,6 +241,10 @@ if ($installerValues.ContainsKey('Mode')) {
 
 if ($installerValues.ContainsKey('ExpectedInstallerName')) {
     Write-Output "ExpectedInstallerName=$($installerValues['ExpectedInstallerName'])"
+}
+
+if ($installerValues.ContainsKey('SetupIconPath')) {
+    Write-Output "SetupIconPath=$($installerValues['SetupIconPath'])"
 }
 
 if ($installerValues.ContainsKey('InstallerPath')) {
