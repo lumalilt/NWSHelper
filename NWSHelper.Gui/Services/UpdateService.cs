@@ -6,7 +6,9 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
 using Avalonia.Platform;
+using Avalonia.Styling;
 using NetSparkleUpdater;
 using NetSparkleUpdater.Enums;
 using NetSparkleUpdater.SignatureVerifiers;
@@ -326,7 +328,66 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
         }
 
         var icon = TryLoadUpdateIcon();
-        return icon is null ? new UIFactory() : new UIFactory(icon);
+        var useDarkTheme = UseDarkUpdaterTheme();
+        var uiFactory = icon is null ? new UIFactory() : new UIFactory(icon);
+        uiFactory.UseStaticUpdateWindowBackgroundColor = true;
+        uiFactory.UpdateWindowGridBackgroundBrush = new SolidColorBrush(Color.Parse(GetUpdateWindowBackgroundHex(useDarkTheme)));
+        uiFactory.ReleaseNotesHTMLTemplate = BuildReleaseNotesHtmlTemplate(useDarkTheme);
+        uiFactory.AdditionalReleaseNotesHeaderHTML = BuildReleaseNotesHeaderHtml(useDarkTheme);
+        uiFactory.ProcessWindowAfterInit = static (window, _) =>
+        {
+            if (Application.Current is not null)
+            {
+                window.RequestedThemeVariant = Application.Current.ActualThemeVariant;
+            }
+        };
+        return uiFactory;
+    }
+
+    internal static bool UseDarkUpdaterTheme()
+    {
+        return Application.Current?.ActualThemeVariant == ThemeVariant.Dark;
+    }
+
+    internal static string GetUpdateWindowBackgroundHex(bool useDarkTheme)
+    {
+        return useDarkTheme ? "#111827" : "#E2E8F0";
+    }
+
+    internal static string BuildReleaseNotesHtmlTemplate(bool useDarkTheme)
+    {
+        var borderColor = useDarkTheme ? "#374151" : "#CBD5E1";
+        var panelBackground = useDarkTheme ? "#1F2937" : "#F8FAFC";
+        var textColor = useDarkTheme ? "#F8FAFC" : "#0F172A";
+        var headerTextColor = useDarkTheme ? "#020617" : "#0F172A";
+
+        return
+            $"<div style=\"border: {borderColor} 1px solid; background: {panelBackground}; color: {textColor};\">" +
+                $"<div style=\"background: {{3}}; background-color: {{3}}; color: {headerTextColor}; font-size: 16px; padding: 5px; padding-top: 4px; padding-bottom: 0;\">" +
+                    "{0} ({1})" +
+                $"</div><div style=\"padding: 5px; font-size: 12px; background: {panelBackground}; color: {textColor};\">{{2}}</div></div>";
+    }
+
+    internal static string BuildReleaseNotesHeaderHtml(bool useDarkTheme)
+    {
+        var bodyBackground = useDarkTheme ? "#1F2937" : "#F8FAFC";
+        var bodyText = useDarkTheme ? "#F8FAFC" : "#0F172A";
+        var linkColor = useDarkTheme ? "#93C5FD" : "#1D4ED8";
+        var codeBackground = useDarkTheme ? "#111827" : "#E2E8F0";
+        var codeText = useDarkTheme ? "#E5E7EB" : "#1E293B";
+
+        return
+            "<style>" +
+            $"body {{ position: fixed; padding-left: 8px; padding-right: 0px; margin-right: 0; padding-top: 14px; padding-bottom: 0px; background: {bodyBackground}; color: {bodyText}; }} " +
+            $"h1, h2, h3, h4, h5, li, p, span, div {{ color: {bodyText}; }} " +
+            "h1, h2, h3, h4, h5 { margin: 4px; margin-top: 8px; } " +
+            "li, li li { margin: 4px; } " +
+            "li, p { font-size: 18px; } " +
+            "li p, li ul { margin-top: 0px; margin-bottom: 0px; } " +
+            "ul { margin-top: 2px; margin-bottom: 2px; } " +
+            $"a {{ color: {linkColor}; }} " +
+            $"pre, code {{ background: {codeBackground}; color: {codeText}; }} " +
+            "</style>";
     }
 
     private static WindowIcon? TryLoadUpdateIcon()
@@ -490,3 +551,4 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
         }
     }
 }
+

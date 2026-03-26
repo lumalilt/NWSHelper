@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using Avalonia;
 using NetSparkleUpdater;
 using NetSparkleUpdater.Enums;
 using NWSHelper.Gui.Services;
@@ -147,6 +148,40 @@ public class UpdateServiceVersionTests
             interactiveUiAvailable: false);
 
         Assert.Equal("Update available: 1.0.16.", message);
+    }
+
+    [Theory]
+    [InlineData(true, "#1F2937", "#F8FAFC")]
+    [InlineData(false, "#F8FAFC", "#0F172A")]
+    public void BuildReleaseNotesHtmlTemplate_UsesThemeColors(bool useDarkTheme, string expectedBackground, string expectedTextColor)
+    {
+        var template = NetSparkleUpdateService.BuildReleaseNotesHtmlTemplate(useDarkTheme);
+
+        Assert.Contains(expectedBackground, template, StringComparison.Ordinal);
+        Assert.Contains(expectedTextColor, template, StringComparison.Ordinal);
+        Assert.Contains("{0} ({1})", template, StringComparison.Ordinal);
+        Assert.Contains("{2}", template, StringComparison.Ordinal);
+        Assert.Contains("{3}", template, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true, "#1F2937", "#F8FAFC", "#93C5FD")]
+    [InlineData(false, "#F8FAFC", "#0F172A", "#1D4ED8")]
+    public void BuildReleaseNotesHeaderHtml_UsesThemeColors(bool useDarkTheme, string expectedBackground, string expectedTextColor, string expectedLinkColor)
+    {
+        var headerHtml = NetSparkleUpdateService.BuildReleaseNotesHeaderHtml(useDarkTheme);
+
+        Assert.Contains(expectedBackground, headerHtml, StringComparison.Ordinal);
+        Assert.Contains(expectedTextColor, headerHtml, StringComparison.Ordinal);
+        Assert.Contains(expectedLinkColor, headerHtml, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true, "#111827")]
+    [InlineData(false, "#E2E8F0")]
+    public void GetUpdateWindowBackgroundHex_ReturnsThemeSurface(bool useDarkTheme, string expected)
+    {
+        Assert.Equal(expected, NetSparkleUpdateService.GetUpdateWindowBackgroundHex(useDarkTheme));
     }
 
     private sealed class EnvironmentVariableScope : IDisposable
