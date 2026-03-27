@@ -298,7 +298,12 @@ jobs:
           if ('${{ steps.msix-policy.outputs.build_msix_package }}' -eq 'true') {
             $requiredNames += @(
               'MSIX_PACKAGE_IDENTITY_NAME',
-              'MSIX_PACKAGE_PUBLISHER',
+              'MSIX_PACKAGE_PUBLISHER'
+            )
+          }
+
+          if ('${{ steps.msix-policy.outputs.include_msix_in_release }}' -eq 'true') {
+            $requiredNames += @(
               'MSIX_SIGNING_CERTIFICATE_BASE64',
               'MSIX_SIGNING_CERTIFICATE_PASSWORD'
             )
@@ -385,7 +390,7 @@ jobs:
 
       - name: Materialize MSIX signing certificate
         id: msix-signing
-        if: ${{ steps.msix-policy.outputs.build_msix_package == 'true' }}
+        if: ${{ steps.msix-policy.outputs.include_msix_in_release == 'true' }}
         shell: pwsh
         env:
           MSIX_SIGNING_CERTIFICATE_BASE64: ${{ secrets.MSIX_SIGNING_CERTIFICATE_BASE64 }}
@@ -422,12 +427,15 @@ jobs:
             $packagingParameters.PackagePublisher = $env:MSIX_PACKAGE_PUBLISHER
             $packagingParameters.PackagePublisherDisplayName = $env:MSIX_PACKAGE_PUBLISHER_DISPLAY_NAME
             $packagingParameters.PackageDescription = $env:MSIX_PACKAGE_DESCRIPTION
-            $packagingParameters.SignMsix = $true
-            $packagingParameters.CertificatePath = '${{ steps.msix-signing.outputs.certificate_path }}'
-            $packagingParameters.CertificatePassword = $env:MSIX_SIGNING_CERTIFICATE_PASSWORD
 
-            if (-not [string]::IsNullOrWhiteSpace($env:MSIX_SIGNING_TIMESTAMP_URL)) {
-              $packagingParameters.TimestampServerUrl = $env:MSIX_SIGNING_TIMESTAMP_URL
+            if ('${{ steps.msix-policy.outputs.include_msix_in_release }}' -eq 'true') {
+              $packagingParameters.SignMsix = $true
+              $packagingParameters.CertificatePath = '${{ steps.msix-signing.outputs.certificate_path }}'
+              $packagingParameters.CertificatePassword = $env:MSIX_SIGNING_CERTIFICATE_PASSWORD
+
+              if (-not [string]::IsNullOrWhiteSpace($env:MSIX_SIGNING_TIMESTAMP_URL)) {
+                $packagingParameters.TimestampServerUrl = $env:MSIX_SIGNING_TIMESTAMP_URL
+              }
             }
           }
           else {
