@@ -479,6 +479,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool CanRestoreStorePurchase => !IsAccountLinkBusy && IsStoreInstall && activeAccountLinkSnapshot.HasActiveSession;
 
+    public bool HasStoreContinuityPrompt => IsStoreInstall && !HasVerifiedStoreContinuity(activeAccountLinkSnapshot);
+
+    public string StoreContinuityPromptTitle => GetStoreContinuityPromptTitle();
+
+    public string StoreContinuityPromptMessage => GetStoreContinuityPromptMessage();
+
     public string StatusLine => string.IsNullOrWhiteSpace(LastError) ? StatusMessage : LastError;
 
     partial void OnCurrentStageChanged(WorkflowStage value)
@@ -519,6 +525,9 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(CanConfigureAutoUpdatePolicy));
         OnPropertyChanged(nameof(CanRestoreStorePurchase));
+        OnPropertyChanged(nameof(HasStoreContinuityPrompt));
+        OnPropertyChanged(nameof(StoreContinuityPromptTitle));
+        OnPropertyChanged(nameof(StoreContinuityPromptMessage));
     }
 
     partial void OnIsAccountLinkBusyChanged(bool value)
@@ -886,6 +895,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var result = await accountLinkService.StartSignInAsync(AccountLinkEmail, CancellationToken.None);
             ApplyAccountLinkOperationResult(result);
+            await TryAutoRestoreStorePurchaseAsync(result.Snapshot, CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
@@ -919,6 +929,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var result = await accountLinkService.RefreshStatusAsync(CancellationToken.None);
             ApplyAccountLinkOperationResult(result);
+            await TryAutoRestoreStorePurchaseAsync(result.Snapshot, CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
@@ -950,8 +961,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            var result = await accountLinkService.RestoreStorePurchaseAsync(CancellationToken.None);
-            ApplyAccountLinkOperationResult(result);
+            await RestoreStorePurchaseCoreAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
@@ -973,6 +983,29 @@ public partial class MainWindowViewModel : ViewModelBase
     public Task RunStartupUpdatePolicyAsync()
     {
         return ExecuteUpdateCheckAsync(fromStartupPolicy: true, CancellationToken.None);
+    }
+
+    public async Task RunStartupStoreContinuityPolicyAsync()
+    {
+        if (!IsStoreInstall)
+        {
+            return;
+        }
+
+        if (ShouldPromptForStoreContinuityLink(activeAccountLinkSnapshot))
+        {
+            if (CurrentStage != WorkflowStage.Settings)
+            {
+                settingsReturnStage = CurrentStage;
+                CurrentStage = WorkflowStage.Settings;
+            }
+
+            LastError = null;
+            StatusMessage = "Store install detected. Link an email now to preserve later direct-download access.";
+            return;
+        }
+
+        await TryAutoRestoreStorePurchaseAsync(activeAccountLinkSnapshot, CancellationToken.None);
     }
 
     [RelayCommand]
@@ -2133,6 +2166,84 @@ public partial class MainWindowViewModel : ViewModelBase
         CanClearAccountLink = activeAccountLinkSnapshot.HasState;
         OnPropertyChanged(nameof(CanRefreshAccountLink));
         OnPropertyChanged(nameof(CanRestoreStorePurchase));
+        OnPropertyChanged(nameof(HasStoreContinuityPrompt));
+        OnPropertyChanged(nameof(StoreContinuityPromptTitle));
+        OnPropertyChanged(nameof(StoreContinuityPromptMessage));
+    }
+
+    private bool HasVerifiedStoreContinuity(AccountLinkSnapshot snapshot)
+    {
+        return IsStoreInstall
+            && activeEntitlementSnapshot.HasUnlimitedAddressesAddOn
+            && snapshot.Status == AccountLinkStateStatus.Linked
+            && string.Equals(snapshot.PurchaseSource, "store", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ShouldPromptForStoreContinuityLink(AccountLinkSnapshot snapshot)
+    {
+        return IsStoreInstall
+            && !HasVerifiedStoreContinuity(snapshot)
+            && !snapshot.HasActiveSession;
+    }
+
+    private bool ShouldAutoRestoreStorePurchase(AccountLinkSnapshot snapshot)
+    {
+        return IsStoreInstall
+            && !HasVerifiedStoreContinuity(snapshot)
+            && snapshot.HasActiveSession
+            && !string.Equals(snapshot.PurchaseSource, "store", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string GetStoreContinuityPromptTitle()
+    {
+        if (!HasStoreContinuityPrompt)
+        {
+            return string.Empty;
+        }
+
+        return activeAccountLinkSnapshot.Status switch
+        {
+            AccountLinkStateStatus.AwaitingConfirmation => "Complete email sign-in",
+            AccountLinkStateStatus.PendingReview => "Store claim pending review",
+            AccountLinkStateStatus.Failed => "Store claim needs attention",
+            _ when activeAccountLinkSnapshot.HasActiveSession => "Finish Store purchase restore",
+            _ => "Protect Store purchase continuity"
+        };
+    }
+
+    private string GetStoreContinuityPromptMessage()
+    {
+        if (!HasStoreContinuityPrompt)
+        {
+            return string.Empty;
+        }
+
+        return activeAccountLinkSnapshot.Status switch
+        {
+            AccountLinkStateStatus.AwaitingConfirmation => "Use the emailed link to finish sign-in. After the session is active, NWS Helper will try to attach your Store purchase automatically.",
+            AccountLinkStateStatus.PendingReview => "Your Store purchase claim was submitted and is waiting for manual review. Keep using the same email so this purchase can be recovered on a direct install later.",
+            AccountLinkStateStatus.Failed => "The Store continuity check did not complete. Retry Link Email or Restore Store Purchase to capture this install.",
+            _ when activeAccountLinkSnapshot.HasActiveSession => "This install is signed in, but the Store purchase is not linked yet. NWS Helper will try to restore it automatically when possible, and you can still use Restore Store Purchase manually if needed.",
+            _ => "Link an email now so this Store purchase can later be recovered on a direct install without depending on this device alone."
+        };
+    }
+
+    private async Task TryAutoRestoreStorePurchaseAsync(AccountLinkSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        if (!ShouldAutoRestoreStorePurchase(snapshot))
+        {
+            return;
+        }
+
+        AccountLinkStatusMessage = "Checking Store purchase continuity...";
+        StatusMessage = "Checking Store purchase continuity...";
+        await RestoreStorePurchaseCoreAsync(cancellationToken);
+    }
+
+    private async Task RestoreStorePurchaseCoreAsync(CancellationToken cancellationToken)
+    {
+        var result = await accountLinkService.RestoreStorePurchaseAsync(cancellationToken);
+        ApplyAccountLinkOperationResult(result);
     }
 
     private static string FormatPurchaseSource(string purchaseSource)

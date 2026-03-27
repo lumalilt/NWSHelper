@@ -18,6 +18,7 @@ public partial class MainWindow : Window
 
         if (DataContext is MainWindowViewModel viewModel)
         {
+            _ = viewModel.RunStartupStoreContinuityPolicyAsync();
             _ = viewModel.RunStartupUpdatePolicyAsync();
         }
     }

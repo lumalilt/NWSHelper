@@ -179,6 +179,20 @@
                     <TextBlock Text="Unified Store + direct entitlement state for this install." />
 
                     <StackPanel Spacing="8" Margin="0,4,0,0">
+                        <Border IsVisible="{Binding HasStoreContinuityPrompt}"
+                                Background="{DynamicResource StageNavBackgroundBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{Binding StoreContinuityPromptTitle}"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding StoreContinuityPromptMessage}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <TextBlock VerticalAlignment="Center" Text="Account Email" Width="180" />
                             <TextBox Width="420"
