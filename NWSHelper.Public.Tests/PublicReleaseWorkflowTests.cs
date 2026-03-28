@@ -41,6 +41,8 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("-ArtifactsPath $resolvedReleaseMetadataStagingDirectory", workflow, StringComparison.Ordinal);
         Assert.Contains("./scripts/compute-version.ps1 -TagBuild", workflow, StringComparison.Ordinal);
         Assert.Contains("./scripts/compute-version.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("$submissionParameters = @{", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("-ForceReplacePendingSubmission:${{ inputs.force_replace_pending_store_submission == 'true' }}", workflow, StringComparison.Ordinal);
         Assert.Contains("else {", workflow, StringComparison.Ordinal);
     }
 

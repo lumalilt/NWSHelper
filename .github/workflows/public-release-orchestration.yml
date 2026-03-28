@@ -790,16 +790,22 @@ jobs:
           $targetPublishMode = if ([string]::IsNullOrWhiteSpace($env:PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE)) { 'Manual' } else { $env:PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE }
           $evidencePath = Join-Path ([System.IO.Path]::GetFullPath($env:STORE_EVIDENCE_DIR)) 'partner-center-production-validation.json'
 
-          ./scripts/store/submit-partner-center-flight.ps1 `
-            -SubmissionTarget Production `
-            -ApplicationId $env:PARTNER_CENTER_APPLICATION_ID `
-            -PackagePath $preparedPackagePath `
-            -ExpectedPackageIdentityName $env:MSIX_PACKAGE_IDENTITY_NAME `
-            -ExpectedPackagePublisher $env:MSIX_PACKAGE_PUBLISHER `
-            -TargetPublishMode $targetPublishMode `
-            -ForceReplacePendingSubmission:${{ inputs.force_replace_pending_store_submission == 'true' }} `
-            -EvidenceOutputPath $evidencePath `
-            -ValidateOnly
+          $submissionParameters = @{
+            SubmissionTarget = 'Production'
+            ApplicationId = $env:PARTNER_CENTER_APPLICATION_ID
+            PackagePath = $preparedPackagePath
+            ExpectedPackageIdentityName = $env:MSIX_PACKAGE_IDENTITY_NAME
+            ExpectedPackagePublisher = $env:MSIX_PACKAGE_PUBLISHER
+            TargetPublishMode = $targetPublishMode
+            EvidenceOutputPath = $evidencePath
+            ValidateOnly = $true
+          }
+
+          if ('${{ inputs.force_replace_pending_store_submission }}' -eq 'true') {
+            $submissionParameters.ForceReplacePendingSubmission = $true
+          }
+
+          ./scripts/store/submit-partner-center-flight.ps1 @submissionParameters
 
       - name: Upload production Store prepare artifacts
         uses: actions/upload-artifact@v4
@@ -872,19 +878,25 @@ jobs:
 
           $targetPublishMode = if ([string]::IsNullOrWhiteSpace($env:PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE)) { 'Manual' } else { $env:PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE }
 
-          ./scripts/store/submit-partner-center-flight.ps1 `
-            -SubmissionTarget Production `
-            -ApplicationId $env:PARTNER_CENTER_APPLICATION_ID `
-            -PackagePath $packagePath `
-            -TenantId $env:PARTNER_CENTER_TENANT_ID `
-            -ClientId $env:PARTNER_CENTER_CLIENT_ID `
-            -ClientSecret $env:PARTNER_CENTER_CLIENT_SECRET `
-            -SubmissionNotes $env:PARTNER_CENTER_SUBMISSION_NOTES `
-            -TargetPublishMode $targetPublishMode `
-            -ExpectedPackageIdentityName $env:MSIX_PACKAGE_IDENTITY_NAME `
-            -ExpectedPackagePublisher $env:MSIX_PACKAGE_PUBLISHER `
-            -ForceReplacePendingSubmission:${{ inputs.force_replace_pending_store_submission == 'true' }} `
-            -EvidenceOutputPath (Join-Path $env:STORE_EVIDENCE_DIR 'partner-center-production-submission.json')
+          $submissionParameters = @{
+            SubmissionTarget = 'Production'
+            ApplicationId = $env:PARTNER_CENTER_APPLICATION_ID
+            PackagePath = $packagePath
+            TenantId = $env:PARTNER_CENTER_TENANT_ID
+            ClientId = $env:PARTNER_CENTER_CLIENT_ID
+            ClientSecret = $env:PARTNER_CENTER_CLIENT_SECRET
+            SubmissionNotes = $env:PARTNER_CENTER_SUBMISSION_NOTES
+            TargetPublishMode = $targetPublishMode
+            ExpectedPackageIdentityName = $env:MSIX_PACKAGE_IDENTITY_NAME
+            ExpectedPackagePublisher = $env:MSIX_PACKAGE_PUBLISHER
+            EvidenceOutputPath = (Join-Path $env:STORE_EVIDENCE_DIR 'partner-center-production-submission.json')
+          }
+
+          if ('${{ inputs.force_replace_pending_store_submission }}' -eq 'true') {
+            $submissionParameters.ForceReplacePendingSubmission = $true
+          }
+
+          ./scripts/store/submit-partner-center-flight.ps1 @submissionParameters
 
       - name: Upload production Store submission evidence
         uses: actions/upload-artifact@v4
