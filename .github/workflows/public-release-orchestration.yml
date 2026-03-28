@@ -283,6 +283,8 @@ jobs:
           $includeMsixInRelease = [string]::Equals($env:INCLUDE_GITHUB_RELEASE_MSIX, 'true', [System.StringComparison]::OrdinalIgnoreCase)
           $buildMsixPackage = $includeMsixInRelease -or '${{ needs.release-gate.outputs.should_prepare_store }}' -eq 'true'
 
+          Write-Host "Resolved MSIX policy: include_msix_in_release=$includeMsixInRelease build_msix_package=$buildMsixPackage"
+
           "include_msix_in_release=$(([string]$includeMsixInRelease).ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "build_msix_package=$(([string]$buildMsixPackage).ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
@@ -312,6 +314,10 @@ jobs:
           foreach ($requiredName in $requiredNames) {
             $requiredValue = [Environment]::GetEnvironmentVariable($requiredName)
             if ([string]::IsNullOrWhiteSpace($requiredValue)) {
+              if ($requiredName -like 'MSIX_SIGNING_CERTIFICATE_*') {
+                throw "Required public-release value '$requiredName' is missing. MSIX signing secrets are only required when INCLUDE_GITHUB_RELEASE_MSIX=true for a downloadable GitHub-release MSIX. Store-prepare-only runs should not require them."
+              }
+
               throw "Required public-release value '$requiredName' is missing. Configure the protected public-release environment first."
             }
           }
