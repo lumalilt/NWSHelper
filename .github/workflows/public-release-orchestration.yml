@@ -263,6 +263,31 @@ jobs:
             ./scripts/compute-version.ps1
           }
 
+      - name: Validate tag matches version metadata
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.release-gate.outputs.release_tag }}
+          VERSION_PREFIX: ${{ steps.compute.outputs.VersionPrefix }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TAG)) {
+            Write-Host 'Skipping tag/version validation because no release tag was resolved.'
+            return
+          }
+
+          if (-not $env:RELEASE_TAG.StartsWith('v', [System.StringComparison]::Ordinal)) {
+            throw "Release tag '$env:RELEASE_TAG' must start with 'v'."
+          }
+
+          $tagVersion = $env:RELEASE_TAG.Substring(1)
+          $expectedVersionPrefix = $env:VERSION_PREFIX
+
+          $matchesStableVersion = [string]::Equals($tagVersion, $expectedVersionPrefix, [System.StringComparison]::Ordinal)
+          $matchesPrereleaseVersion = $tagVersion.StartsWith("$expectedVersionPrefix-", [System.StringComparison]::Ordinal)
+
+          if (-not ($matchesStableVersion -or $matchesPrereleaseVersion)) {
+            throw "Release tag '$env:RELEASE_TAG' does not match version.json version '$expectedVersionPrefix'. Update version.json before creating the release tag."
+          }
+
       - name: Determine release channel
         id: release-channel
         shell: pwsh
@@ -832,7 +857,7 @@ jobs:
       PARTNER_CENTER_CLIENT_ID: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
       PARTNER_CENTER_CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
       PARTNER_CENTER_APPLICATION_ID: ${{ secrets.PARTNER_CENTER_APPLICATION_ID }}
-      PARTNER_CENTER_SUBMISSION_NOTES: ${{ vars.PARTNER_CENTER_SUBMISSION_NOTES }}
+      PARTNER_CENTER_PRODUCTION_SUBMISSION_NOTES: ${{ vars.PARTNER_CENTER_PRODUCTION_SUBMISSION_NOTES }}
       PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE: ${{ vars.PARTNER_CENTER_PRODUCTION_TARGET_PUBLISH_MODE }}
       MSIX_PACKAGE_IDENTITY_NAME: ${{ vars.MSIX_PACKAGE_IDENTITY_NAME }}
       MSIX_PACKAGE_PUBLISHER: ${{ vars.MSIX_PACKAGE_PUBLISHER }}
@@ -885,7 +910,7 @@ jobs:
             TenantId = $env:PARTNER_CENTER_TENANT_ID
             ClientId = $env:PARTNER_CENTER_CLIENT_ID
             ClientSecret = $env:PARTNER_CENTER_CLIENT_SECRET
-            SubmissionNotes = $env:PARTNER_CENTER_SUBMISSION_NOTES
+            SubmissionNotes = $env:PARTNER_CENTER_PRODUCTION_SUBMISSION_NOTES
             TargetPublishMode = $targetPublishMode
             ExpectedPackageIdentityName = $env:MSIX_PACKAGE_IDENTITY_NAME
             ExpectedPackagePublisher = $env:MSIX_PACKAGE_PUBLISHER

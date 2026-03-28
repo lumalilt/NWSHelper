@@ -160,6 +160,101 @@ public class PackageGuiDistributionScriptTests
     }
 
     [Fact]
+    public void PackageGuiDistributionScript_PackageMode_EscapesManifestValuesForMsix()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperGuiPackagingScript", Guid.NewGuid().ToString("N"));
+        var publishDirectory = Path.Combine(root, "publish");
+        var installerDirectory = Path.Combine(root, "release", "installer");
+        var msixDirectory = Path.Combine(root, "release", "msix");
+        var fakeIsccPath = Path.Combine(root, "fake-iscc.cmd");
+        var fakeIsccInnerPath = Path.Combine(root, "fake-iscc-inner.ps1");
+        var fakeMakeAppxPath = Path.Combine(root, "fake-makeappx.cmd");
+        var fakeMakeAppxInnerPath = Path.Combine(root, "fake-makeappx-inner.ps1");
+        var manifestCapturePath = Path.Combine(root, "captured-AppxManifest.xml");
+
+        Directory.CreateDirectory(publishDirectory);
+        File.WriteAllText(Path.Combine(publishDirectory, "NWSHelper.Gui.exe"), "gui-exe");
+        File.WriteAllText(Path.Combine(publishDirectory, "dependency.dll"), "dep");
+
+        File.WriteAllText(
+            fakeIsccInnerPath,
+            "param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)\r\n" +
+            "$appVersion = $null\r\n" +
+            "$outputDir = $null\r\n" +
+            "foreach ($argument in $Arguments) {\r\n" +
+            "    if ($argument.StartsWith('/DAppVersion=')) { $appVersion = $argument.Substring('/DAppVersion='.Length) }\r\n" +
+            "    if ($argument.StartsWith('/DOutputDir=')) { $outputDir = $argument.Substring('/DOutputDir='.Length) }\r\n" +
+            "}\r\n" +
+            "if ([string]::IsNullOrWhiteSpace($appVersion) -or [string]::IsNullOrWhiteSpace($outputDir)) { exit 1 }\r\n" +
+            "New-Item -ItemType Directory -Path $outputDir -Force | Out-Null\r\n" +
+            "Set-Content -LiteralPath (Join-Path $outputDir \"NWSHelper-Setup-$appVersion.exe\") -Value 'fake-installer'\r\n");
+
+        File.WriteAllText(
+            fakeMakeAppxInnerPath,
+            "param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)\r\n" +
+            "$package = $null\r\n" +
+            "$staging = $null\r\n" +
+            "for ($i = 0; $i -lt $Arguments.Length; $i++) {\r\n" +
+            "    if ($Arguments[$i] -eq '/p' -and $i + 1 -lt $Arguments.Length) { $package = $Arguments[$i + 1] }\r\n" +
+            "    if ($Arguments[$i] -eq '/d' -and $i + 1 -lt $Arguments.Length) { $staging = $Arguments[$i + 1] }\r\n" +
+            "}\r\n" +
+            "if ([string]::IsNullOrWhiteSpace($package) -or [string]::IsNullOrWhiteSpace($staging)) { exit 1 }\r\n" +
+            "Copy-Item -LiteralPath (Join-Path $staging 'AppxManifest.xml') -Destination (Join-Path $PSScriptRoot 'captured-AppxManifest.xml') -Force\r\n" +
+            "Set-Content -LiteralPath $package -Value 'fake-msix'\r\n");
+
+        File.WriteAllText(
+            fakeIsccPath,
+            "@echo off\r\n" +
+            "pwsh -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fake-iscc-inner.ps1\" %*\r\n" +
+            "exit /b %ERRORLEVEL%\r\n");
+
+        File.WriteAllText(
+            fakeMakeAppxPath,
+            "@echo off\r\n" +
+            "pwsh -NoProfile -ExecutionPolicy Bypass -File \"%~dp0fake-makeappx-inner.ps1\" %*\r\n" +
+            "exit /b 0\r\n");
+
+        try
+        {
+            var output = RunPowerShellScript(
+                scriptName: "package-gui-distribution.ps1",
+                arguments:
+                [
+                    "-PublishDirectory", publishDirectory,
+                    "-Version", "1.2.3",
+                    "-InstallerOutputDirectory", installerDirectory,
+                    "-MsixOutputDirectory", msixDirectory,
+                    "-ChecksumArtifactsPath", Path.Combine(root, "release"),
+                    "-IsccPath", fakeIsccPath,
+                    "-MakeAppxPath", fakeMakeAppxPath,
+                    "-PackageDisplayName", "NWS Helper & Tools",
+                    "-PackageDescription", "Addresses & more!"
+                ]);
+
+            Assert.Equal("Package", output["Mode"]);
+            Assert.True(File.Exists(manifestCapturePath), $"Expected captured manifest at {manifestCapturePath}");
+
+            var manifest = File.ReadAllText(manifestCapturePath);
+            Assert.Contains("<DisplayName>NWS Helper &amp; Tools</DisplayName>", manifest, StringComparison.Ordinal);
+            Assert.Contains("<Description>Addresses &amp; more!</Description>", manifest, StringComparison.Ordinal);
+            Assert.Contains("DisplayName=\"NWS Helper &amp; Tools\"", manifest, StringComparison.Ordinal);
+            Assert.Contains("Description=\"Addresses &amp; more!\"", manifest, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void PackageGuiDistributionScript_PackageMode_PassesThroughMsixSigningOptions()
     {
         if (!OperatingSystem.IsWindows())

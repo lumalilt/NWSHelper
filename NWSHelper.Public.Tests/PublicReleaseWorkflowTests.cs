@@ -26,6 +26,7 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("if ('${{ steps.msix-policy.outputs.include_msix_in_release }}' -eq 'true')", workflow, StringComparison.Ordinal);
         Assert.Contains("MSIX_SIGNING_CERTIFICATE_BASE64", workflow, StringComparison.Ordinal);
         Assert.Contains("MSIX_SIGNING_CERTIFICATE_PASSWORD", workflow, StringComparison.Ordinal);
+        Assert.Contains("PARTNER_CENTER_PRODUCTION_SUBMISSION_NOTES", workflow, StringComparison.Ordinal);
         Assert.Contains("GH_REPO: ${{ github.repository }}", workflow, StringComparison.Ordinal);
         Assert.Contains("gh release view $tag --repo $env:GH_REPO", workflow, StringComparison.Ordinal);
         Assert.Contains("gh release upload $tag $assets --repo $env:GH_REPO --clobber", workflow, StringComparison.Ordinal);
@@ -41,6 +42,9 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("-ArtifactsPath $resolvedReleaseMetadataStagingDirectory", workflow, StringComparison.Ordinal);
         Assert.Contains("./scripts/compute-version.ps1 -TagBuild", workflow, StringComparison.Ordinal);
         Assert.Contains("./scripts/compute-version.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("Validate tag matches version metadata", workflow, StringComparison.Ordinal);
+        Assert.Contains("Release tag '$env:RELEASE_TAG' does not match version.json version '$expectedVersionPrefix'", workflow, StringComparison.Ordinal);
+        Assert.Contains("$tagVersion.StartsWith(\"$expectedVersionPrefix-\"", workflow, StringComparison.Ordinal);
         Assert.Contains("$submissionParameters = @{", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("-ForceReplacePendingSubmission:${{ inputs.force_replace_pending_store_submission == 'true' }}", workflow, StringComparison.Ordinal);
         Assert.Contains("else {", workflow, StringComparison.Ordinal);

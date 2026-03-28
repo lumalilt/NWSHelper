@@ -42,6 +42,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Escape-XmlValue {
+    param([string]$Value)
+
+    if ($null -eq $Value) {
+        return ''
+    }
+
+    return [System.Security.SecurityElement]::Escape($Value)
+}
+
 function Resolve-ExistingDirectory {
     param(
         [Parameter(Mandatory = $true)]
@@ -280,12 +290,12 @@ foreach ($logoSpecification in @(
 
 $manifestTemplate = Get-Content -LiteralPath $resolvedManifestTemplatePath -Raw
 $manifest = $manifestTemplate
-$manifest = $manifest.Replace('__IDENTITY_NAME__', $PackageIdentityName)
-$manifest = $manifest.Replace('__IDENTITY_PUBLISHER__', $PackagePublisher)
-$manifest = $manifest.Replace('__IDENTITY_VERSION__', $msixVersion)
-$manifest = $manifest.Replace('__DISPLAY_NAME__', $PackageDisplayName)
-$manifest = $manifest.Replace('__PUBLISHER_DISPLAY_NAME__', $PackagePublisherDisplayName)
-$manifest = $manifest.Replace('__DESCRIPTION__', $PackageDescription)
+$manifest = $manifest.Replace('__IDENTITY_NAME__', (Escape-XmlValue -Value $PackageIdentityName))
+$manifest = $manifest.Replace('__IDENTITY_PUBLISHER__', (Escape-XmlValue -Value $PackagePublisher))
+$manifest = $manifest.Replace('__IDENTITY_VERSION__', (Escape-XmlValue -Value $msixVersion))
+$manifest = $manifest.Replace('__DISPLAY_NAME__', (Escape-XmlValue -Value $PackageDisplayName))
+$manifest = $manifest.Replace('__PUBLISHER_DISPLAY_NAME__', (Escape-XmlValue -Value $PackagePublisherDisplayName))
+$manifest = $manifest.Replace('__DESCRIPTION__', (Escape-XmlValue -Value $PackageDescription))
 
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [System.IO.File]::WriteAllText($manifestOutputPath, $manifest, $utf8NoBom)
