@@ -27,6 +27,29 @@
                 <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
                     <StackPanel Spacing="10">
                         <TextBlock Text="Setup Inputs" FontSize="20" FontWeight="SemiBold" />
+                        <Expander IsExpanded="{Binding IsSetupGuidanceExpanded, Mode=TwoWay}">
+                            <Expander.Header>
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="How to use this with your territory app" FontWeight="SemiBold" />
+                                    <TextBlock Text="Export Territories and Territory Addresses from your territory app, select theme here, Preview and Run here for new addresses, then import the updated file back. Expand for more ->"
+                                               FontSize="11"
+                                               Opacity="0.8"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Expander.Header>
+                            <Border Margin="0,8,0,0"
+                                    Padding="10"
+                                    Background="{DynamicResource ThemeSurfaceMidBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}"
+                                    BorderThickness="1">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="1. Export Territories CSV from your territory app." TextWrapping="Wrap" />
+                                    <TextBlock Text="2. Export Territory Addresses CSV if you want to preserve statuses, notes, and merge with existing addresses." TextWrapping="Wrap" />
+                                    <TextBlock Text="3. Choose the new-address dataset (country, state, then city/county), then build Preview." TextWrapping="Wrap" />
+                                    <TextBlock Text="4. Review the preview and run extraction to create import-ready output files for your territory app." TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </Expander>
                         <Grid ColumnDefinitions="240,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
                             <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="Territories CSV *" />
@@ -37,9 +60,15 @@
 
                             <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="Existing Territory Addresses CSV" />
-                                <TextBlock Classes="info-marker" ToolTip.Tip="Optional pre-existing territory addresses CSV to merge new adddresses with and to update with location data. Highly recommended to add file Export Territory Addresses here to preserve existing address statuses like DNC, etc." />
+                                <TextBlock Classes="info-marker" ToolTip.Tip="Optional exported Territory Addresses CSV used to merge new addresses and preserve existing statuses and notes." />
                             </StackPanel>
-                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ExistingAddressesCsvPath, Mode=TwoWay}" Watermark="Optional path. Highly recommended to add file Export Territory Addresses here to preserve existing address statuses like DNC, etc." />
+                            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
+                                <TextBox Text="{Binding ExistingAddressesCsvPath, Mode=TwoWay}" Watermark="Optional path to exported Territory Addresses CSV" />
+                                <TextBlock Text="Recommended: Do specify your exported Territory Addresses file so existing statuses and notes can be preserved."
+                                           FontSize="11"
+                                           Opacity="0.78"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
                             <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Click="OnBrowseExistingCsvClick" ToolTip.Tip="Browse for existing territory addresses CSV file" />
 
                             <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">

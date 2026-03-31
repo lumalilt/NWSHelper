@@ -81,6 +81,8 @@ public partial class MainWindowViewModel : ViewModelBase
         nameof(EnableMapRenderItemReuse),
         nameof(MapTileCacheLifeDays),
         nameof(EnableMapAddressPointDeduplication),
+        nameof(IsSetupGuidanceExpanded),
+        nameof(IsResultsGuidanceExpanded),
         nameof(IsOptionsExpanded)
     ];
 
@@ -203,6 +205,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool enableMapAddressPointDeduplication = true;
+
+    [ObservableProperty]
+    private bool isSetupGuidanceExpanded = true;
+
+    [ObservableProperty]
+    private bool isResultsGuidanceExpanded = true;
 
     [ObservableProperty]
     private bool isOptionsExpanded;
@@ -1957,6 +1965,8 @@ public partial class MainWindowViewModel : ViewModelBase
         EnableMapRenderItemReuse = settings.EnableMapRenderItemReuse;
         MapTileCacheLifeDays = settings.MapTileCacheLifeDays;
         EnableMapAddressPointDeduplication = settings.EnableMapAddressPointDeduplication;
+        IsSetupGuidanceExpanded = settings.IsSetupGuidanceExpanded;
+        IsResultsGuidanceExpanded = settings.IsResultsGuidanceExpanded;
         IsOptionsExpanded = settings.IsOptionsExpanded;
 
         if (!string.IsNullOrWhiteSpace(settings.SelectedSmartFillMode) &&
@@ -2058,6 +2068,8 @@ public partial class MainWindowViewModel : ViewModelBase
             EnableMapRenderItemReuse = EnableMapRenderItemReuse,
             MapTileCacheLifeDays = MapTileCacheLifeDays,
             EnableMapAddressPointDeduplication = EnableMapAddressPointDeduplication,
+            IsSetupGuidanceExpanded = IsSetupGuidanceExpanded,
+            IsResultsGuidanceExpanded = IsResultsGuidanceExpanded,
             IsOptionsExpanded = IsOptionsExpanded
         });
     }

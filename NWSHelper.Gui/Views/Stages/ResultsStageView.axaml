@@ -31,6 +31,29 @@
             <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
                 <StackPanel Spacing="8">
                     <TextBlock Text="Results Summary" FontSize="20" FontWeight="SemiBold" />
+                    <Expander IsExpanded="{Binding IsResultsGuidanceExpanded, Mode=TwoWay}">
+                        <Expander.Header>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Next step: ensure you have a backup in your territory app and then import from here back into your territory app" FontWeight="SemiBold" />
+                                <TextBlock Text="Use these output files with new/updated territory addresses to update the same territory app you exported from."
+                                           FontSize="11"
+                                           Opacity="0.8"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Expander.Header>
+                        <Border Margin="0,8,0,0"
+                                Padding="10"
+                                Background="{DynamicResource ThemeSurfaceMidBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="1. Open and review the output territory addresses file(s) that best match/es your import workflow as follows:" TextWrapping="Wrap" />
+                                <TextBlock Text="2. Use the consolidated file for one full import, or per-territory/category files when testing (recommended at first) or needed." TextWrapping="Wrap" />
+                                <TextBlock Text="3. Click to Copy the path(s) of the generated addresses files you want to import, then import them back into your territory app." TextWrapping="Wrap" />
+                                <TextBlock Text="4. Keep the original exports if you want a rollback point for your existing addresses. Or consider restoring a territory backup you made earlier." TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </Expander>
                     <Border IsVisible="{Binding HasCappedOutputMessage}"
                             Padding="8"
                             BorderThickness="1"
