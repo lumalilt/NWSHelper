@@ -216,6 +216,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool isOptionsExpanded;
 
     [ObservableProperty]
+    private int storeContinuityAttentionRequestId;
+
+    [ObservableProperty]
     private string activationKey = string.Empty;
 
     [ObservableProperty]
@@ -1008,6 +1011,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 CurrentStage = WorkflowStage.Settings;
             }
 
+            RequestStoreContinuityAttention();
             LastError = null;
             StatusMessage = "Store install detected. Link an email now to preserve later direct-download access.";
             return;
@@ -2204,6 +2208,11 @@ public partial class MainWindowViewModel : ViewModelBase
             && !HasVerifiedStoreContinuity(snapshot)
             && snapshot.HasActiveSession
             && !string.Equals(snapshot.PurchaseSource, "store", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RequestStoreContinuityAttention()
+    {
+        StoreContinuityAttentionRequestId++;
     }
 
     private string GetStoreContinuityPromptTitle()

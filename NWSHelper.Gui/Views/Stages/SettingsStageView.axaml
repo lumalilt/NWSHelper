@@ -6,11 +6,26 @@
              mc:Ignorable="d"
              x:Class="NWSHelper.Gui.Views.Stages.SettingsStageView"
              x:DataType="vm:MainWindowViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.store-continuity-prompt">
+            <Setter Property="Background" Value="{DynamicResource StoreContinuityPromptBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource StoreContinuityPromptBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+                </Transitions>
+            </Setter>
+        </Style>
+    </UserControl.Styles>
+
     <UserControl.KeyBindings>
         <KeyBinding Gesture="Escape" Command="{Binding GoToPreviousStageCommand}" />
     </UserControl.KeyBindings>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <ScrollViewer x:Name="SettingsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Spacing="16">
             <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Padding="12">
                 <StackPanel Spacing="12">
@@ -175,12 +190,13 @@
 
                     <Separator />
 
+                    <StackPanel x:Name="AccountLinkSection" Spacing="8" Margin="0,4,0,0">
+
                     <TextBlock Text="Account Link" FontSize="16" FontWeight="SemiBold" />
                     <TextBlock Text="Unified Store + direct entitlement state for this install." />
-
-                    <StackPanel Spacing="8" Margin="0,4,0,0">
-                        <Border IsVisible="{Binding HasStoreContinuityPrompt}"
-                                Background="{DynamicResource StageNavBackgroundBrush}"
+                        <Border x:Name="StoreContinuityPromptBanner"
+                                Classes="store-continuity-prompt"
+                                IsVisible="{Binding HasStoreContinuityPrompt}"
                                 BorderBrush="{DynamicResource CardBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="8"
@@ -195,7 +211,8 @@
 
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <TextBlock VerticalAlignment="Center" Text="Account Email" Width="180" />
-                            <TextBox Width="420"
+                            <TextBox x:Name="AccountLinkEmailTextBox"
+                                     Width="420"
                                      Text="{Binding AccountLinkEmail, Mode=TwoWay}"
                                      Watermark="Enter email for account link" />
                                 <Button Content="Link Email"

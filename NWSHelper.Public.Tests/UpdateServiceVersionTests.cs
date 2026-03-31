@@ -97,6 +97,27 @@ public class UpdateServiceVersionTests
     }
 
     [Fact]
+    public void StoreRuntimeContextProvider_UsesEnvironmentOverrideForStoreUiTesting()
+    {
+        var provider = new StoreRuntimeContextProvider(
+            environmentReader: name => name switch
+            {
+                "NWSHELPER_FORCE_STORE_CHANNEL" => "1",
+                "NWSHELPER_STORE_PACKAGE_FAMILY_NAME" => "NWSHelper.Public.StoreUiTest",
+                _ => null
+            },
+            processPathReader: () => @"D:\source\repos\dmealo\NWSHelper.Public\NWSHelper.Gui\bin\Debug\net10.0\NWSHelper.Gui.exe");
+
+        var context = provider.GetCurrent();
+
+        Assert.True(context.IsPackaged);
+        Assert.True(context.IsStoreInstall);
+        Assert.Equal(StoreProofAuthority.Heuristic, context.ProofAuthority);
+        Assert.Equal("environment-override", context.DetectionSource);
+        Assert.Equal("NWSHelper.Public.StoreUiTest", context.PackageFamilyName);
+    }
+
+    [Fact]
     public void BuildStatusMessage_ForStartupUpdateAvailable_PromptsManualReview()
     {
         var latest = new AppCastItem

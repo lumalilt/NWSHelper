@@ -1,7 +1,9 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using System;
+using System.ComponentModel;
 using System.IO;
 using System.Threading.Tasks;
 using NWSHelper.Gui.ViewModels;
@@ -10,9 +12,89 @@ namespace NWSHelper.Gui.Views.Stages;
 
 public partial class SettingsStageView : UserControl
 {
+    private MainWindowViewModel? observedViewModel;
+    private int lastHandledStoreContinuityAttentionRequestId;
+
     public SettingsStageView()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (observedViewModel is not null)
+        {
+            observedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
+        observedViewModel = DataContext as MainWindowViewModel;
+
+        if (observedViewModel is not null)
+        {
+            observedViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        }
+
+        _ = ProcessStoreContinuityAttentionAsync();
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainWindowViewModel.StoreContinuityAttentionRequestId) ||
+            e.PropertyName == nameof(MainWindowViewModel.CurrentStage))
+        {
+            _ = ProcessStoreContinuityAttentionAsync();
+        }
+    }
+
+    private async Task ProcessStoreContinuityAttentionAsync()
+    {
+        if (observedViewModel is null || observedViewModel.CurrentStage != WorkflowStage.Settings)
+        {
+            return;
+        }
+
+        var requestId = observedViewModel.StoreContinuityAttentionRequestId;
+        if (requestId <= 0 || requestId == lastHandledStoreContinuityAttentionRequestId)
+        {
+            return;
+        }
+
+        lastHandledStoreContinuityAttentionRequestId = requestId;
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                AccountLinkSection.BringIntoView();
+                AccountLinkEmailTextBox.Focus();
+            }, DispatcherPriority.Background);
+
+            if (AccountLinkEmailTextBox.IsFocused)
+            {
+                break;
+            }
+
+            await Task.Delay(40);
+        }
+
+        await PulseStoreContinuityPromptAsync();
+    }
+
+    private async Task PulseStoreContinuityPromptAsync()
+    {
+        if (!StoreContinuityPromptBanner.IsVisible)
+        {
+            return;
+        }
+
+        StoreContinuityPromptBanner.Opacity = 0.4;
+        await Task.Delay(250);
+        StoreContinuityPromptBanner.Opacity = 0.75;
+        await Task.Delay(250);
+        StoreContinuityPromptBanner.Opacity = 0.5;
+        await Task.Delay(250);
+        StoreContinuityPromptBanner.Opacity = 1.0;
     }
 
     private async void OnExportMigrationBackupClick(object? sender, RoutedEventArgs e)
