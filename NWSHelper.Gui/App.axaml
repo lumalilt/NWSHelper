@@ -20,6 +20,8 @@
                     <SolidColorBrush x:Key="SuccessBadgeBrush">#16A34A</SolidColorBrush>
                     <SolidColorBrush x:Key="DividerBrush">#E2E8F0</SolidColorBrush>
                     <SolidColorBrush x:Key="MetricBorderBrush">#CBD5E1</SolidColorBrush>
+                    <SolidColorBrush x:Key="StoreContinuityPromptBackgroundBrush">#F5ECD8</SolidColorBrush>
+                    <SolidColorBrush x:Key="StoreContinuityPromptBorderBrush">#C99A3D</SolidColorBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="ShellHeaderBackgroundBrush">#0B1220</SolidColorBrush>
@@ -33,6 +35,8 @@
                     <SolidColorBrush x:Key="SuccessBadgeBrush">#16A34A</SolidColorBrush>
                     <SolidColorBrush x:Key="DividerBrush">#374151</SolidColorBrush>
                     <SolidColorBrush x:Key="MetricBorderBrush">#4B5563</SolidColorBrush>
+                    <SolidColorBrush x:Key="StoreContinuityPromptBackgroundBrush">#4F3D1A</SolidColorBrush>
+                    <SolidColorBrush x:Key="StoreContinuityPromptBorderBrush">#D5B06B</SolidColorBrush>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>

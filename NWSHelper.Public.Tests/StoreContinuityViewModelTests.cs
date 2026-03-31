@@ -12,7 +12,7 @@ namespace NWSHelper.Tests;
 public class StoreContinuityViewModelTests
 {
     [Fact]
-    public async Task StartupPolicy_WhenStoreInstallIsUnlinked_PromptsFromSettings()
+    public async Task StartupPolicy_WhenStoreInstallIsUnlinked_PromptsFromSettingsAndRequestsAttention()
     {
         var viewModel = CreateViewModel(updateService: new FakeUpdateService { IsStoreInstall = true });
 
@@ -20,6 +20,7 @@ public class StoreContinuityViewModelTests
 
         Assert.Equal(WorkflowStage.Settings, viewModel.CurrentStage);
         Assert.True(viewModel.HasStoreContinuityPrompt);
+        Assert.Equal(1, viewModel.StoreContinuityAttentionRequestId);
         Assert.Equal("Protect Store purchase continuity", viewModel.StoreContinuityPromptTitle);
         Assert.Contains("direct install", viewModel.StoreContinuityPromptMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("direct-download access", viewModel.StatusMessage, StringComparison.OrdinalIgnoreCase);
@@ -68,20 +69,31 @@ public class StoreContinuityViewModelTests
         await viewModel.RunStartupStoreContinuityPolicyAsync();
 
         Assert.Equal(1, accountLinkService.RestoreStorePurchaseCalls);
+        Assert.Equal(0, viewModel.StoreContinuityAttentionRequestId);
         Assert.True(viewModel.HasUnlimitedAddressesAddOn);
         Assert.False(viewModel.HasStoreContinuityPrompt);
         Assert.Equal("Store purchase linked.", viewModel.StatusMessage);
     }
 
     [Fact]
-    public void PublicGuiMarkup_ContainsStoreContinuityBindingsAndStartupHook()
+    public void PublicGuiMarkup_ContainsStoreContinuityAttentionBindingsAndStartupHook()
     {
         var settingsMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "SettingsStageView.axaml"));
+        var settingsCodeBehind = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "SettingsStageView.axaml.cs"));
+        var appMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "App.axaml"));
         var mainWindowCodeBehind = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "MainWindow.axaml.cs"));
 
         Assert.Contains("HasStoreContinuityPrompt", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreContinuityPromptTitle", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreContinuityPromptMessage", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("StoreContinuityPromptBanner", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("AccountLinkSection", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("AccountLinkEmailTextBox", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("store-continuity-prompt", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("StoreContinuityPromptBackgroundBrush", appMarkup, StringComparison.Ordinal);
+        Assert.Contains("StoreContinuityAttentionRequestId", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("BringIntoView", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("PulseStoreContinuityPromptAsync", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("RunStartupStoreContinuityPolicyAsync", mainWindowCodeBehind, StringComparison.Ordinal);
     }
 
