@@ -26,6 +26,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly ISetupSettingsService setupSettingsService;
     private readonly IGuiSettingsMigrationService settingsMigrationService;
     private readonly IEntitlementService entitlementService;
+    private readonly IStoreAddOnCatalogService storeAddOnCatalogService;
     private readonly IAccountLinkService accountLinkService;
     private readonly IUpdateService updateService;
     private IReadOnlyList<DatasetCatalogItem> availableDatasets = [];
@@ -225,6 +226,12 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool isActivatingEntitlement;
 
     [ObservableProperty]
+    private bool isLoadingStoreAddOns;
+
+    [ObservableProperty]
+    private bool isPurchasingStoreAddOn;
+
+    [ObservableProperty]
     private string entitlementAddOnLabel = "None";
 
     [ObservableProperty]
@@ -232,6 +239,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private string entitlementLimitLabel = "30 new addresses / territory";
+
+    [ObservableProperty]
+    private string storeAddOnCatalogMessage = "Install from Microsoft Store to browse and purchase add-ons in-app.";
 
     [ObservableProperty]
     private bool entitlementExpired;
@@ -366,7 +376,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private AppThemePreference selectedThemePreference = AppThemePreference.System;
 
     public MainWindowViewModel()
-        : this(null, null, null, null, null, null, null, null, null, null)
+        : this(null, null, null, null, null, null, null, null, null, null, null)
     {
     }
 
@@ -380,7 +390,8 @@ public partial class MainWindowViewModel : ViewModelBase
         IEntitlementService? entitlementService = null,
         IAccountLinkService? accountLinkService = null,
         IUpdateService? updateService = null,
-        IGuiSettingsMigrationService? settingsMigrationService = null)
+        IGuiSettingsMigrationService? settingsMigrationService = null,
+        IStoreAddOnCatalogService? storeAddOnCatalogService = null)
     {
         var storeRuntimeContextProvider = new StoreRuntimeContextProvider();
         this.extractionOrchestrator = extractionOrchestrator ?? new ExtractionOrchestrator();
@@ -390,6 +401,7 @@ public partial class MainWindowViewModel : ViewModelBase
         this.setupSettingsService = setupSettingsService ?? new SetupSettingsService();
         this.settingsMigrationService = settingsMigrationService ?? new GuiSettingsMigrationService();
         this.entitlementService = entitlementService ?? new SupabaseEntitlementService();
+        this.storeAddOnCatalogService = storeAddOnCatalogService ?? StoreAddOnCatalogServiceFactory.CreateDefault();
         this.accountLinkService = accountLinkService ?? new AccountLinkService(storeRuntimeContextProvider: storeRuntimeContextProvider);
         this.updateService = updateService ?? new NetSparkleUpdateService(storeRuntimeContextProvider: storeRuntimeContextProvider);
 
@@ -405,6 +417,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ProgressLanes = [];
         TerritoryResults = [];
         OutputArtifacts = [];
+        StoreAddOnOffers = [];
 
         isApplyingInitialTheme = true;
         SelectedThemePreference = this.themeService.CurrentPreference;
@@ -429,6 +442,7 @@ public partial class MainWindowViewModel : ViewModelBase
         IsStoreInstall = this.updateService.IsStoreInstall;
         AutoUpdateEnabled = this.updateService.AutoUpdateEnabled;
         isApplyingInitialUpdateSettings = false;
+        StoreAddOnCatalogMessage = GetDefaultStoreAddOnCatalogMessage();
 
         if (DatasetProviders.Count > 0 && !DatasetProviders.Any(provider => string.Equals(provider.Id, SelectedDatasetProviderId, StringComparison.OrdinalIgnoreCase)))
         {
@@ -460,6 +474,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<OutputArtifactItemViewModel> OutputArtifacts { get; }
 
+    public ObservableCollection<StoreAddOnOfferViewModel> StoreAddOnOffers { get; }
+
     public bool IsSetupStage => CurrentStage == WorkflowStage.Setup;
 
     public bool IsPreviewStage => CurrentStage == WorkflowStage.Preview;
@@ -482,7 +498,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool HasUnlimitedAddressesAddOn => activeEntitlementSnapshot.HasUnlimitedAddressesAddOn;
 
+    public bool HasStoreAddOnOffers => StoreAddOnOffers.Count > 0;
+
     public bool CanConfigureAutoUpdatePolicy => !IsStoreInstall;
+
+    public bool CanRefreshStoreAddOnCatalog => IsStoreInstall && !IsLoadingStoreAddOns && !IsPurchasingStoreAddOn;
 
     public bool CanStartAccountSignIn => !IsAccountLinkBusy;
 
@@ -505,6 +525,11 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsRunStage));
         OnPropertyChanged(nameof(IsResultsStage));
         OnPropertyChanged(nameof(IsSettingsStage));
+
+        if (value == WorkflowStage.Settings)
+        {
+            _ = EnsureStoreAddOnCatalogLoadedAsync();
+        }
     }
 
     partial void OnStatusMessageChanged(string value)
@@ -535,10 +560,16 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnIsStoreInstallChanged(bool value)
     {
         OnPropertyChanged(nameof(CanConfigureAutoUpdatePolicy));
+        OnPropertyChanged(nameof(CanRefreshStoreAddOnCatalog));
         OnPropertyChanged(nameof(CanRestoreStorePurchase));
         OnPropertyChanged(nameof(HasStoreContinuityPrompt));
         OnPropertyChanged(nameof(StoreContinuityPromptTitle));
         OnPropertyChanged(nameof(StoreContinuityPromptMessage));
+
+        if (!HasStoreAddOnOffers)
+        {
+            StoreAddOnCatalogMessage = GetDefaultStoreAddOnCatalogMessage();
+        }
     }
 
     partial void OnIsAccountLinkBusyChanged(bool value)
@@ -546,6 +577,16 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanStartAccountSignIn));
         OnPropertyChanged(nameof(CanRefreshAccountLink));
         OnPropertyChanged(nameof(CanRestoreStorePurchase));
+    }
+
+    partial void OnIsLoadingStoreAddOnsChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanRefreshStoreAddOnCatalog));
+    }
+
+    partial void OnIsPurchasingStoreAddOnChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanRefreshStoreAddOnCatalog));
     }
 
     partial void OnAutoUpdateEnabledChanged(bool value)
@@ -839,6 +880,80 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             IsActivatingEntitlement = false;
+        }
+    }
+
+    [RelayCommand]
+    private Task RefreshStoreAddOnCatalogAsync()
+    {
+        return RefreshStoreAddOnCatalogCoreAsync(CancellationToken.None);
+    }
+
+    [RelayCommand]
+    private async Task PurchaseStoreAddOnAsync(StoreAddOnOfferViewModel? offer)
+    {
+        if (offer is null)
+        {
+            StatusMessage = "Select a Microsoft Store add-on before purchasing.";
+            return;
+        }
+
+        if (IsPurchasingStoreAddOn)
+        {
+            return;
+        }
+
+        if (offer.IsOwned)
+        {
+            StatusMessage = $"{offer.Title} is already owned for this Microsoft account.";
+            return;
+        }
+
+        if (!IsStoreInstall)
+        {
+            StoreAddOnCatalogMessage = GetDefaultStoreAddOnCatalogMessage();
+            StatusMessage = StoreAddOnCatalogMessage;
+            return;
+        }
+
+        IsPurchasingStoreAddOn = true;
+        LastError = null;
+
+        try
+        {
+            var purchaseResult = await storeAddOnCatalogService.PurchaseAsync(offer.StoreId, CancellationToken.None);
+            StoreAddOnCatalogMessage = purchaseResult.Message;
+            StatusMessage = purchaseResult.Message;
+
+            if (!purchaseResult.IsSuccess && !purchaseResult.IsCanceled)
+            {
+                LastError = purchaseResult.Message;
+            }
+
+            await RefreshStoreAddOnCatalogCoreAsync(CancellationToken.None);
+
+            if (!purchaseResult.IsSuccess)
+            {
+                return;
+            }
+
+            if (CanRestoreStorePurchase)
+            {
+                await RestoreStorePurchaseCoreAsync(CancellationToken.None);
+                return;
+            }
+
+            AccountLinkStatusMessage = "Purchase recorded in Microsoft Store. Link an email, then use Restore Store Purchase to attach it to this install.";
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            StoreAddOnCatalogMessage = ex.Message;
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            IsPurchasingStoreAddOn = false;
         }
     }
 
@@ -2103,6 +2218,89 @@ public partial class MainWindowViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(HasUnlimitedAddressesAddOn));
         UpdateAccountLinkDisplay();
+    }
+
+    private async Task EnsureStoreAddOnCatalogLoadedAsync()
+    {
+        if (!IsStoreInstall || HasStoreAddOnOffers || IsLoadingStoreAddOns)
+        {
+            return;
+        }
+
+        try
+        {
+            await RefreshStoreAddOnCatalogCoreAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Keep Settings entry resilient; explicit refresh surfaces any follow-up error.
+        }
+    }
+
+    private async Task RefreshStoreAddOnCatalogCoreAsync(CancellationToken cancellationToken)
+    {
+        if (IsLoadingStoreAddOns)
+        {
+            return;
+        }
+
+        if (!IsStoreInstall)
+        {
+            StoreAddOnOffers.Clear();
+            OnPropertyChanged(nameof(HasStoreAddOnOffers));
+            StoreAddOnCatalogMessage = GetDefaultStoreAddOnCatalogMessage();
+            StatusMessage = StoreAddOnCatalogMessage;
+            return;
+        }
+
+        IsLoadingStoreAddOns = true;
+        LastError = null;
+
+        try
+        {
+            var result = await storeAddOnCatalogService.GetCatalogAsync(cancellationToken);
+            ReplaceStoreAddOnOffers(result.Offers);
+            StoreAddOnCatalogMessage = result.Message;
+            StatusMessage = result.Message;
+
+            if (!result.IsAvailable)
+            {
+                LastError = result.Message;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            StoreAddOnCatalogMessage = "Microsoft Store add-on refresh was canceled.";
+            StatusMessage = StoreAddOnCatalogMessage;
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            StoreAddOnCatalogMessage = ex.Message;
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoadingStoreAddOns = false;
+        }
+    }
+
+    private void ReplaceStoreAddOnOffers(IReadOnlyList<StoreAddOnOffer> offers)
+    {
+        StoreAddOnOffers.Clear();
+        foreach (var offer in offers)
+        {
+            StoreAddOnOffers.Add(new StoreAddOnOfferViewModel(offer));
+        }
+
+        OnPropertyChanged(nameof(HasStoreAddOnOffers));
+    }
+
+    private string GetDefaultStoreAddOnCatalogMessage()
+    {
+        return IsStoreInstall
+            ? "Refresh Microsoft Store add-ons to view available in-app purchases for this install."
+            : "Install from Microsoft Store to browse and purchase add-ons in-app.";
     }
 
     private void ApplyAccountLinkOperationResult(AccountLinkOperationResult result)

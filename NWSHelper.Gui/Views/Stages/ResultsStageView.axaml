@@ -35,7 +35,7 @@
                         <Expander.Header>
                             <StackPanel Spacing="2">
                                 <TextBlock Text="Next step: ensure you have a backup in your territory app and then import from here back into your territory app" FontWeight="SemiBold" />
-                                <TextBlock Text="Use these output files with new/updated territory addresses to update the same territory app you exported from."
+                                <TextBlock Text="Use these output files with new/updated territory addresses to update the same territory app you exported from. Expand for more ->"
                                            FontSize="11"
                                            Opacity="0.8"
                                            TextWrapping="Wrap" />

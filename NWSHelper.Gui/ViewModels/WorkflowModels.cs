@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using NWSHelper.Gui.Services;
 
 namespace NWSHelper.Gui.ViewModels;
 
@@ -165,4 +166,37 @@ public class OutputArtifactItemViewModel
     public string Path { get; }
 
     public bool HasPath => !string.IsNullOrWhiteSpace(Path);
+}
+
+public sealed class StoreAddOnOfferViewModel
+{
+    public StoreAddOnOfferViewModel(StoreAddOnOffer offer)
+    {
+        StoreId = offer.StoreId;
+        InAppOfferToken = offer.InAppOfferToken;
+        Title = offer.Title;
+        Description = offer.Description;
+        PriceLabel = string.IsNullOrWhiteSpace(offer.PriceText) ? "Price unavailable" : offer.PriceText;
+        IsOwned = offer.IsOwned;
+    }
+
+    public string StoreId { get; }
+
+    public string InAppOfferToken { get; }
+
+    public string Title { get; }
+
+    public string Description { get; }
+
+    public string PriceLabel { get; }
+
+    public bool IsOwned { get; }
+
+    public bool CanPurchase => !IsOwned;
+
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
+    public string OwnershipLabel => IsOwned ? "Owned on this Microsoft account" : "Available to purchase in Microsoft Store";
+
+    public string PurchaseActionLabel => IsOwned ? "Owned" : "Buy in Store";
 }

@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
+             x:Name="SettingsStageRoot"
              x:Class="NWSHelper.Gui.Views.Stages.SettingsStageView"
              x:DataType="vm:MainWindowViewModel">
     <UserControl.Styles>
@@ -186,6 +187,74 @@
                         <TextBlock VerticalAlignment="Center"
                                    IsVisible="{Binding IsActivatingEntitlement}"
                                    Text="Validating entitlement..." />
+
+                        <Separator />
+
+                        <TextBlock Text="Microsoft Store Add-Ons" FontWeight="SemiBold" />
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="Browse Microsoft Store durable add-ons for this app, see whether they are already owned, and start purchase flow from the packaged Windows build." />
+
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Content="Refresh Store Add-Ons"
+                                    Command="{Binding RefreshStoreAddOnCatalogCommand}"
+                                    IsEnabled="{Binding CanRefreshStoreAddOnCatalog}"
+                                    ToolTip.Tip="Load Microsoft Store add-ons associated with this app" />
+                            <TextBlock VerticalAlignment="Center"
+                                       IsVisible="{Binding IsLoadingStoreAddOns}"
+                                       Text="Loading Store add-ons..." />
+                            <TextBlock VerticalAlignment="Center"
+                                       IsVisible="{Binding IsPurchasingStoreAddOn}"
+                                       Text="Waiting for Microsoft Store purchase..." />
+                        </StackPanel>
+
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="{Binding StoreAddOnCatalogMessage}" />
+
+                        <ItemsControl ItemsSource="{Binding StoreAddOnOffers}"
+                                      IsVisible="{Binding HasStoreAddOnOffers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:StoreAddOnOfferViewModel">
+                                    <Border Background="{DynamicResource StageNavBackgroundBrush}"
+                                            BorderBrush="{DynamicResource CardBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="12"
+                                            Margin="0,4,0,0">
+                                        <Grid ColumnDefinitions="*,Auto"
+                                              RowDefinitions="Auto,Auto,Auto"
+                                              ColumnSpacing="16"
+                                              RowSpacing="4">
+                                            <TextBlock Grid.Row="0"
+                                                       Grid.Column="0"
+                                                       Text="{Binding Title}"
+                                                       FontWeight="SemiBold" />
+                                            <TextBlock Grid.Row="1"
+                                                       Grid.Column="0"
+                                                       IsVisible="{Binding HasDescription}"
+                                                       Text="{Binding Description}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Grid.Row="2"
+                                                       Grid.Column="0"
+                                                       Text="{Binding OwnershipLabel}" />
+
+                                            <StackPanel Grid.Row="0"
+                                                        Grid.RowSpan="3"
+                                                        Grid.Column="1"
+                                                        Spacing="8"
+                                                        HorizontalAlignment="Right">
+                                                <TextBlock HorizontalAlignment="Right"
+                                                           Text="{Binding PriceLabel}"
+                                                           FontWeight="SemiBold" />
+                                                <Button Content="{Binding PurchaseActionLabel}"
+                                                        Command="{Binding #SettingsStageRoot.DataContext.PurchaseStoreAddOnCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        IsEnabled="{Binding CanPurchase}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
 
                     <Separator />

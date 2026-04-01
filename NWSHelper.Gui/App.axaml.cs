@@ -35,25 +35,29 @@ public partial class App : Application
             var accountLinkService = new AccountLinkService(storeRuntimeContextProvider: storeRuntimeContextProvider);
             var updateService = new NetSparkleUpdateService(storeRuntimeContextProvider: storeRuntimeContextProvider);
             var launchOptions = GuiLaunchArgumentsParser.Parse(desktop.Args ?? Array.Empty<string>());
+            var mainWindow = new MainWindow();
+            var storeAddOnCatalogService = StoreAddOnCatalogServiceFactory.CreateDefault(
+                () => mainWindow.TryGetPlatformHandle()?.Handle ?? 0);
 
             desktop.Exit += (_, _) =>
             {
                 updateService.Dispose();
             };
 
-            desktop.MainWindow = new MainWindow
-            {
-                DataContext = new MainWindowViewModel(
-                    new ExtractionOrchestrator(),
-                    new OutputPathActions(),
-                    themeService,
-                    setupSettingsService,
-                    launchOptions,
-                    null,
-                    null,
-                    accountLinkService,
-                    updateService),
-            };
+            mainWindow.DataContext = new MainWindowViewModel(
+                new ExtractionOrchestrator(),
+                new OutputPathActions(),
+                themeService,
+                setupSettingsService,
+                launchOptions,
+                null,
+                null,
+                accountLinkService,
+                updateService,
+                null,
+                storeAddOnCatalogService);
+
+            desktop.MainWindow = mainWindow;
         }
 
         base.OnFrameworkInitializationCompleted();
