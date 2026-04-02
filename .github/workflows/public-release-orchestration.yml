@@ -779,13 +779,18 @@ jobs:
       - build-package-bundle
     if: ${{ needs.release-gate.outputs.should_prepare_canary == 'true' }}
     runs-on: windows-latest
+    outputs:
+      resolved_flight_id: ${{ steps.resolve-canary-flight.outputs.flight_id }}
     environment:
       name: ${{ 'canary-package-flight' }}
     env:
       VERSION: ${{ needs.build-package-bundle.outputs.version }}
       RELEASE_ARTIFACT_NAME: ${{ needs.build-package-bundle.outputs.artifact_name }}
+      PARTNER_CENTER_TENANT_ID: ${{ vars.PARTNER_CENTER_TENANT_ID || secrets.PARTNER_CENTER_TENANT_ID }}
+      PARTNER_CENTER_CLIENT_ID: ${{ vars.PARTNER_CENTER_CLIENT_ID || secrets.PARTNER_CENTER_CLIENT_ID }}
+      PARTNER_CENTER_CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
       PARTNER_CENTER_APPLICATION_ID: ${{ vars.PARTNER_CENTER_APPLICATION_ID || secrets.PARTNER_CENTER_APPLICATION_ID }}
-      PARTNER_CENTER_CANARY_FLIGHT_ID: ${{ vars.PARTNER_CENTER_CANARY_FLIGHT_ID }}
+      PARTNER_CENTER_CANARY_FLIGHT_NAME: ${{ vars.PARTNER_CENTER_CANARY_FLIGHT_NAME }}
       PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE: ${{ vars.PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE }}
       MSIX_PACKAGE_IDENTITY_NAME: ${{ vars.MSIX_PACKAGE_IDENTITY_NAME }}
       MSIX_PACKAGE_PUBLISHER: ${{ vars.MSIX_PACKAGE_PUBLISHER }}
@@ -807,8 +812,11 @@ jobs:
         shell: pwsh
         run: |
           foreach ($requiredName in @(
+            'PARTNER_CENTER_TENANT_ID',
+            'PARTNER_CENTER_CLIENT_ID',
+            'PARTNER_CENTER_CLIENT_SECRET',
             'PARTNER_CENTER_APPLICATION_ID',
-            'PARTNER_CENTER_CANARY_FLIGHT_ID',
+            'PARTNER_CENTER_CANARY_FLIGHT_NAME',
             'MSIX_PACKAGE_IDENTITY_NAME',
             'MSIX_PACKAGE_PUBLISHER'
           )) {
@@ -817,6 +825,61 @@ jobs:
               throw "Required canary-package-flight value '$requiredName' is missing. Configure the protected canary-package-flight environment first."
             }
           }
+
+      - name: Resolve canary flight ID
+        id: resolve-canary-flight
+        shell: pwsh
+        run: |
+          $tokenResponse = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$env:PARTNER_CENTER_TENANT_ID/oauth2/token" -ContentType 'application/x-www-form-urlencoded' -Body @{
+            grant_type = 'client_credentials'
+            client_id = $env:PARTNER_CENTER_CLIENT_ID
+            client_secret = $env:PARTNER_CENTER_CLIENT_SECRET
+            resource = 'https://manage.devcenter.microsoft.com'
+          }
+
+          if ([string]::IsNullOrWhiteSpace($tokenResponse.access_token)) {
+            throw 'Partner Center token response did not contain an access token.'
+          }
+
+          $flightsResponse = Invoke-RestMethod -Method Get -Uri "https://manage.devcenter.microsoft.com/v1.0/my/applications/$env:PARTNER_CENTER_APPLICATION_ID/listflights" -Headers @{ Authorization = "Bearer $($tokenResponse.access_token)" }
+          $flights = if ($null -ne $flightsResponse.value) {
+            @($flightsResponse.value)
+          }
+          elseif ($flightsResponse -is [System.Array]) {
+            @($flightsResponse)
+          }
+          elseif ($null -eq $flightsResponse) {
+            @()
+          }
+          else {
+            @($flightsResponse)
+          }
+
+          if ($flights.Count -eq 0) {
+            throw "Partner Center returned no package flights for application '$env:PARTNER_CENTER_APPLICATION_ID'."
+          }
+
+          $matchingFlights = @($flights | Where-Object {
+            [string]::Equals($_.friendlyName, $env:PARTNER_CENTER_CANARY_FLIGHT_NAME, [System.StringComparison]::OrdinalIgnoreCase)
+          })
+
+          if ($matchingFlights.Count -eq 0) {
+            $availableFlightNames = @($flights | ForEach-Object { $_.friendlyName } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+            $availableFlightNamesText = if ($availableFlightNames.Count -gt 0) { $availableFlightNames -join ', ' } else { '<none>' }
+            throw "Could not find Partner Center flight '$env:PARTNER_CENTER_CANARY_FLIGHT_NAME' for application '$env:PARTNER_CENTER_APPLICATION_ID'. Available flights: $availableFlightNamesText"
+          }
+
+          if ($matchingFlights.Count -gt 1) {
+            throw "Partner Center returned multiple package flights named '$env:PARTNER_CENTER_CANARY_FLIGHT_NAME' for application '$env:PARTNER_CENTER_APPLICATION_ID'."
+          }
+
+          $resolvedFlightId = $matchingFlights[0].flightId
+          if ([string]::IsNullOrWhiteSpace($resolvedFlightId)) {
+            throw "Partner Center flight '$env:PARTNER_CENTER_CANARY_FLIGHT_NAME' did not include a flightId."
+          }
+
+          Write-Host "Resolved canary flight '$($matchingFlights[0].friendlyName)' to Partner Center flightId '$resolvedFlightId'."
+          "flight_id=$resolvedFlightId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Stage canary flight package and local identity validation
         shell: pwsh
@@ -842,7 +905,7 @@ jobs:
           $submissionParameters = @{
             SubmissionTarget = 'Flight'
             ApplicationId = $env:PARTNER_CENTER_APPLICATION_ID
-            FlightId = $env:PARTNER_CENTER_CANARY_FLIGHT_ID
+            FlightId = '${{ steps.resolve-canary-flight.outputs.flight_id }}'
             PackagePath = $preparedPackagePath
             ExpectedPackageIdentityName = $env:MSIX_PACKAGE_IDENTITY_NAME
             ExpectedPackagePublisher = $env:MSIX_PACKAGE_PUBLISHER
@@ -882,7 +945,7 @@ jobs:
       PARTNER_CENTER_CLIENT_ID: ${{ vars.PARTNER_CENTER_CLIENT_ID || secrets.PARTNER_CENTER_CLIENT_ID }}
       PARTNER_CENTER_CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
       PARTNER_CENTER_APPLICATION_ID: ${{ vars.PARTNER_CENTER_APPLICATION_ID || secrets.PARTNER_CENTER_APPLICATION_ID }}
-      PARTNER_CENTER_CANARY_FLIGHT_ID: ${{ vars.PARTNER_CENTER_CANARY_FLIGHT_ID }}
+      PARTNER_CENTER_CANARY_FLIGHT_ID: ${{ needs.partner-center-canary-prepare.outputs.resolved_flight_id }}
       PARTNER_CENTER_CANARY_SUBMISSION_NOTES: ${{ vars.PARTNER_CENTER_CANARY_SUBMISSION_NOTES }}
       PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE: ${{ vars.PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE }}
       MSIX_PACKAGE_IDENTITY_NAME: ${{ vars.MSIX_PACKAGE_IDENTITY_NAME }}
