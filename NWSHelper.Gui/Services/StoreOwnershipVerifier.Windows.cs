@@ -28,11 +28,21 @@ public sealed class WindowsStoreOwnershipVerifier : IStoreOwnershipVerifier
         try
         {
             var storeContext = StoreContext.GetDefault();
-            return options.ProductKind switch
+            if (options.ProductKind == StoreOwnedProductKind.DurableAddOn)
             {
-                StoreOwnedProductKind.DurableAddOn => await VerifyDurableAddOnAsync(storeContext, cancellationToken),
-                _ => await VerifyAppAsync(storeContext, cancellationToken)
-            };
+                return await VerifyDurableAddOnAsync(storeContext, cancellationToken, allowImplicitOwnedSelection: true);
+            }
+
+            if (!options.IsProductKindConfigured)
+            {
+                var durableAddOnVerification = await TryVerifyOwnedDurableAddOnAsync(storeContext, cancellationToken);
+                if (durableAddOnVerification is { IsVerified: true, IsOwned: true })
+                {
+                    return durableAddOnVerification;
+                }
+            }
+
+            return await VerifyAppAsync(storeContext, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -72,50 +82,70 @@ public sealed class WindowsStoreOwnershipVerifier : IStoreOwnershipVerifier
         return StoreOwnershipVerificationResult.CreateVerified(evidence, message);
     }
 
-    private async Task<StoreOwnershipVerificationResult> VerifyDurableAddOnAsync(StoreContext storeContext, CancellationToken cancellationToken)
+    private async Task<StoreOwnershipVerificationResult> VerifyDurableAddOnAsync(StoreContext storeContext, CancellationToken cancellationToken, bool allowImplicitOwnedSelection)
     {
-        if (!options.HasDurableIdentifier)
+        var candidates = await GetDurableAddOnCandidatesAsync(storeContext, cancellationToken);
+        var candidate = StoreOwnershipSelectionRules.SelectDurableAddOnCandidate(options, candidates);
+        if (candidate is null)
         {
-            return StoreOwnershipVerificationResult.CreateFallback("Set NWSHELPER_STORE_PRODUCT_STORE_ID or NWSHELPER_STORE_IN_APP_OFFER_TOKEN to verify the Microsoft Store durable add-on.");
+            if (options.HasDurableIdentifier)
+            {
+                return StoreOwnershipVerificationResult.CreateFallback("The configured Microsoft Store durable add-on was not returned for this app.");
+            }
+
+            if (!allowImplicitOwnedSelection)
+            {
+                return StoreOwnershipVerificationResult.CreateFallback("Set NWSHELPER_STORE_PRODUCT_STORE_ID or NWSHELPER_STORE_IN_APP_OFFER_TOKEN to verify the Microsoft Store durable add-on.");
+            }
+
+            return StoreOwnershipVerificationResult.CreateFallback("No uniquely owned Microsoft Store durable add-on was returned for this app.");
         }
 
+        var message = candidate.IsOwned
+            ? options.HasDurableIdentifier
+                ? "Microsoft Store ownership verified for the configured durable add-on."
+                : "Microsoft Store ownership verified for the durable add-on."
+            : options.HasDurableIdentifier
+                ? "No qualifying Microsoft Store purchase was found for the configured durable add-on."
+                : "No qualifying Microsoft Store purchase was found for the durable add-on.";
+
+        return StoreOwnershipVerificationResult.CreateVerified(candidate, message);
+    }
+
+    private async Task<StoreOwnershipVerificationResult?> TryVerifyOwnedDurableAddOnAsync(StoreContext storeContext, CancellationToken cancellationToken)
+    {
+        var candidates = await GetDurableAddOnCandidatesAsync(storeContext, cancellationToken);
+        var candidate = StoreOwnershipSelectionRules.SelectDurableAddOnCandidate(options, candidates);
+        if (candidate is null)
+        {
+            return null;
+        }
+
+        var message = candidate.IsOwned
+            ? "Microsoft Store ownership verified for the durable add-on."
+            : "No qualifying Microsoft Store purchase was found for the durable add-on.";
+
+        return StoreOwnershipVerificationResult.CreateVerified(candidate, message);
+    }
+
+    private static async Task<StoreOwnershipEvidence[]> GetDurableAddOnCandidatesAsync(StoreContext storeContext, CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         var queryResult = await storeContext.GetAssociatedStoreProductsAsync(["Durable"]);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var product = queryResult.Products.Values.FirstOrDefault(MatchesConfiguredProduct);
-        if (product is null)
-        {
-            return StoreOwnershipVerificationResult.CreateFallback("The configured Microsoft Store durable add-on was not returned for this app.");
-        }
-
-        var evidence = new StoreOwnershipEvidence
-        {
-            ProductKind = StoreOwnedProductKind.DurableAddOn,
-            ProductStoreId = product.StoreId ?? string.Empty,
-            InAppOfferToken = product.InAppOfferToken ?? string.Empty,
-            SkuStoreId = product.Skus.FirstOrDefault()?.StoreId ?? string.Empty,
-            IsOwned = product.IsInUserCollection,
-            IsTrial = false,
-            VerificationSource = "windows-store-license"
-        };
-
-        var message = product.IsInUserCollection
-            ? "Microsoft Store ownership verified for the configured durable add-on."
-            : "No qualifying Microsoft Store purchase was found for the configured durable add-on.";
-
-        return StoreOwnershipVerificationResult.CreateVerified(evidence, message);
-    }
-
-    private bool MatchesConfiguredProduct(StoreProduct product)
-    {
-        var matchesStoreId = string.IsNullOrWhiteSpace(options.ProductStoreId) ||
-                             string.Equals(product.StoreId, options.ProductStoreId, StringComparison.OrdinalIgnoreCase);
-
-        var matchesOfferToken = string.IsNullOrWhiteSpace(options.InAppOfferToken) ||
-                                string.Equals(product.InAppOfferToken, options.InAppOfferToken, StringComparison.OrdinalIgnoreCase);
-
-        return matchesStoreId && matchesOfferToken;
+        return queryResult.Products.Values
+            .Select(product => new StoreOwnershipEvidence
+            {
+                ProductKind = StoreOwnedProductKind.DurableAddOn,
+                ProductStoreId = product.StoreId ?? string.Empty,
+                InAppOfferToken = product.InAppOfferToken ?? string.Empty,
+                SkuStoreId = product.Skus.FirstOrDefault()?.StoreId ?? string.Empty,
+                IsOwned = product.IsInUserCollection,
+                IsTrial = false,
+                VerificationSource = "windows-store-license"
+            })
+            .ToArray();
     }
 }
 #endif

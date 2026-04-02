@@ -328,11 +328,15 @@
                                     Command="{Binding ClearLinkedAccountCommand}"
                                     IsEnabled="{Binding CanClearAccountLink}"
                                     ToolTip.Tip="Clear the cached account link for this install" />
+                                <Button Content="Export Support Diagnostics"
+                                    Click="OnExportSupportDiagnosticsClick"
+                                    IsEnabled="{Binding CanExportSupportDiagnostics}"
+                                    ToolTip.Tip="Export a redacted JSON report for Store and account-link troubleshooting" />
                         </StackPanel>
 
                         <TextBlock IsVisible="{Binding IsAccountLinkBusy}"
                                    Text="Contacting bridge service..." />
-                        <TextBlock IsVisible="{Binding IsStoreInstall}"
+                        <TextBlock IsVisible="{Binding ShowStoreRestoreRequiresSignInHint}"
                                    Text="Store install detected. Restore Store Purchase will be available after account sign-in succeeds."
                                    TextWrapping="Wrap" />
                     </StackPanel>

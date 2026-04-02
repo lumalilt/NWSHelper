@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,6 +15,8 @@ public enum StoreOwnedProductKind
 public sealed class StoreOwnershipOptions
 {
     public StoreOwnedProductKind ProductKind { get; init; } = ReadProductKind(Environment.GetEnvironmentVariable("NWSHELPER_STORE_PRODUCT_KIND"));
+
+    public bool IsProductKindConfigured { get; init; } = !string.IsNullOrWhiteSpace((Environment.GetEnvironmentVariable("NWSHELPER_STORE_PRODUCT_KIND") ?? string.Empty).Trim());
 
     public string ProductStoreId { get; init; } = (Environment.GetEnvironmentVariable("NWSHELPER_STORE_PRODUCT_STORE_ID") ?? string.Empty).Trim();
 
@@ -29,6 +33,57 @@ public sealed class StoreOwnershipOptions
                normalized.Equals("Durable", StringComparison.OrdinalIgnoreCase)
             ? StoreOwnedProductKind.DurableAddOn
             : StoreOwnedProductKind.App;
+    }
+}
+
+public static class StoreOwnershipSelectionRules
+{
+    public static StoreOwnershipEvidence? SelectDurableAddOnCandidate(StoreOwnershipOptions options, IEnumerable<StoreOwnershipEvidence> candidates)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(candidates);
+
+        var durableCandidates = candidates
+            .Where(candidate => candidate.ProductKind == StoreOwnedProductKind.DurableAddOn)
+            .ToArray();
+
+        if (durableCandidates.Length == 0)
+        {
+            return null;
+        }
+
+        if (options.HasDurableIdentifier)
+        {
+            return durableCandidates.FirstOrDefault(candidate => MatchesConfiguredDurableProduct(options, candidate));
+        }
+
+        if (options.ProductKind != StoreOwnedProductKind.DurableAddOn && options.IsProductKindConfigured)
+        {
+            return null;
+        }
+
+        var ownedCandidates = durableCandidates
+            .Where(candidate => candidate.IsOwned)
+            .OrderBy(candidate => candidate.ProductStoreId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(candidate => candidate.InAppOfferToken, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return ownedCandidates.Length == 1 ? ownedCandidates[0] : null;
+    }
+
+    public static bool MatchesConfiguredDurableProduct(StoreOwnershipOptions options, StoreOwnershipEvidence candidate)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(candidate);
+
+        var matchesStoreId = string.IsNullOrWhiteSpace(options.ProductStoreId) ||
+                             string.Equals(candidate.ProductStoreId, options.ProductStoreId, StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(candidate.SkuStoreId, options.ProductStoreId, StringComparison.OrdinalIgnoreCase);
+
+        var matchesOfferToken = string.IsNullOrWhiteSpace(options.InAppOfferToken) ||
+                                string.Equals(candidate.InAppOfferToken, options.InAppOfferToken, StringComparison.OrdinalIgnoreCase);
+
+        return matchesStoreId && matchesOfferToken;
     }
 }
 

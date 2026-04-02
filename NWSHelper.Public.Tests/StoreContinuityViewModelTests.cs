@@ -76,6 +76,53 @@ public class StoreContinuityViewModelTests
     }
 
     [Fact]
+    public void PendingReviewSession_HidesSignInRequiredStoreHintAndKeepsRestoreAvailable()
+    {
+        var viewModel = CreateViewModel(
+            accountLinkService: new FakeAccountLinkService
+            {
+                Snapshot = new AccountLinkSnapshot
+                {
+                    Status = AccountLinkStateStatus.PendingReview,
+                    AccountId = "acct_store",
+                    Email = "store@example.com",
+                    PurchaseSource = "store",
+                    LastSyncUtc = DateTimeOffset.UtcNow
+                }
+            },
+            updateService: new FakeUpdateService { IsStoreInstall = true });
+
+        Assert.True(viewModel.CanRestoreStorePurchase);
+        Assert.False(viewModel.ShowStoreRestoreRequiresSignInHint);
+        Assert.True(viewModel.HasStoreContinuityPrompt);
+        Assert.Equal("Store claim pending review", viewModel.StoreContinuityPromptTitle);
+    }
+
+    [Fact]
+    public async Task ExportSupportDiagnosticsAsync_UsesConfiguredExporter()
+    {
+        var diagnosticsService = new FakeSupportDiagnosticsExportService();
+        var viewModel = CreateViewModel(
+            accountLinkService: new FakeAccountLinkService
+            {
+                Snapshot = new AccountLinkSnapshot
+                {
+                    Status = AccountLinkStateStatus.PendingReview,
+                    Email = "store@example.com",
+                    PurchaseSource = "store"
+                }
+            },
+            updateService: new FakeUpdateService { IsStoreInstall = true },
+            supportDiagnosticsExportService: diagnosticsService);
+
+        await viewModel.ExportSupportDiagnosticsAsync("C:\\temp\\support.json");
+
+        Assert.Equal("C:\\temp\\support.json", diagnosticsService.LastPath);
+        Assert.Equal("Support diagnostics exported.", viewModel.StatusMessage);
+        Assert.True(diagnosticsService.LastSnapshot?.IsStoreInstall);
+    }
+
+    [Fact]
     public void PublicGuiMarkup_ContainsStoreContinuityAttentionBindingsAndStartupHook()
     {
         var settingsMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "SettingsStageView.axaml"));
@@ -86,6 +133,8 @@ public class StoreContinuityViewModelTests
         Assert.Contains("HasStoreContinuityPrompt", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreContinuityPromptTitle", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreContinuityPromptMessage", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("ShowStoreRestoreRequiresSignInHint", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("Export Support Diagnostics", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreContinuityPromptBanner", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("AccountLinkSection", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("AccountLinkEmailTextBox", settingsMarkup, StringComparison.Ordinal);
@@ -100,7 +149,8 @@ public class StoreContinuityViewModelTests
     private static MainWindowViewModel CreateViewModel(
         IEntitlementService? entitlementService = null,
         IAccountLinkService? accountLinkService = null,
-        IUpdateService? updateService = null)
+        IUpdateService? updateService = null,
+        ISupportDiagnosticsExportService? supportDiagnosticsExportService = null)
     {
         return new MainWindowViewModel(
             themeService: new FakeThemeService(),
@@ -108,7 +158,8 @@ public class StoreContinuityViewModelTests
             entitlementService: entitlementService ?? new FakeEntitlementService(),
             accountLinkService: accountLinkService ?? new FakeAccountLinkService(),
             updateService: updateService ?? new FakeUpdateService(),
-            settingsMigrationService: new FakeGuiSettingsMigrationService());
+            settingsMigrationService: new FakeGuiSettingsMigrationService(),
+            supportDiagnosticsExportService: supportDiagnosticsExportService ?? new FakeSupportDiagnosticsExportService());
     }
 
     private static string GetRepositoryRoot()
@@ -258,6 +309,25 @@ public class StoreContinuityViewModelTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(new UpdateCheckResult { Message = "No updates." });
+        }
+    }
+
+    private sealed class FakeSupportDiagnosticsExportService : ISupportDiagnosticsExportService
+    {
+        public string? LastPath { get; private set; }
+
+        public SupportDiagnosticsSnapshot? LastSnapshot { get; private set; }
+
+        public Task<SupportDiagnosticsExportResult> ExportAsync(string path, SupportDiagnosticsSnapshot snapshot, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastPath = path;
+            LastSnapshot = snapshot;
+            return Task.FromResult(new SupportDiagnosticsExportResult
+            {
+                IsSuccess = true,
+                Message = "Support diagnostics exported."
+            });
         }
     }
 }

@@ -125,6 +125,21 @@ public partial class SettingsStageView : UserControl
         }
     }
 
+    private async void OnExportSupportDiagnosticsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        var suggestedFileName = $"NWSHelper-support-diagnostics-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.json";
+        var path = await PickSaveFileAsync("Export Support Diagnostics", suggestedFileName);
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            await viewModel.ExportSupportDiagnosticsAsync(path);
+        }
+    }
+
     private async Task<string?> PickSaveFileAsync(string title, string suggestedFileName)
     {
         var topLevel = TopLevel.GetTopLevel(this);

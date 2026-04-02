@@ -141,7 +141,8 @@ public class StoreAddOnCatalogViewModelTests
             accountLinkService: accountLinkService ?? new FakeAccountLinkService(),
             updateService: updateService ?? new FakeUpdateService(),
             settingsMigrationService: new FakeGuiSettingsMigrationService(),
-            storeAddOnCatalogService: storeAddOnCatalogService ?? new FakeStoreAddOnCatalogService());
+            storeAddOnCatalogService: storeAddOnCatalogService ?? new FakeStoreAddOnCatalogService(),
+            supportDiagnosticsExportService: new FakeSupportDiagnosticsExportService());
     }
 
     private static string GetRepositoryRoot()
@@ -304,6 +305,19 @@ public class StoreAddOnCatalogViewModelTests
             cancellationToken.ThrowIfCancellationRequested();
             PurchaseCalls++;
             return Task.FromResult(PurchaseResult);
+        }
+    }
+
+    private sealed class FakeSupportDiagnosticsExportService : ISupportDiagnosticsExportService
+    {
+        public Task<SupportDiagnosticsExportResult> ExportAsync(string path, SupportDiagnosticsSnapshot snapshot, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new SupportDiagnosticsExportResult
+            {
+                IsSuccess = true,
+                Message = "ok"
+            });
         }
     }
 }

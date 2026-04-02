@@ -25,6 +25,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly IThemeService themeService;
     private readonly ISetupSettingsService setupSettingsService;
     private readonly IGuiSettingsMigrationService settingsMigrationService;
+    private readonly ISupportDiagnosticsExportService supportDiagnosticsExportService;
     private readonly IEntitlementService entitlementService;
     private readonly IStoreAddOnCatalogService storeAddOnCatalogService;
     private readonly IAccountLinkService accountLinkService;
@@ -376,7 +377,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private AppThemePreference selectedThemePreference = AppThemePreference.System;
 
     public MainWindowViewModel()
-        : this(null, null, null, null, null, null, null, null, null, null, null)
+        : this(null, null, null, null, null, null, null, null, null, null, null, null)
     {
     }
 
@@ -391,7 +392,8 @@ public partial class MainWindowViewModel : ViewModelBase
         IAccountLinkService? accountLinkService = null,
         IUpdateService? updateService = null,
         IGuiSettingsMigrationService? settingsMigrationService = null,
-        IStoreAddOnCatalogService? storeAddOnCatalogService = null)
+        IStoreAddOnCatalogService? storeAddOnCatalogService = null,
+        ISupportDiagnosticsExportService? supportDiagnosticsExportService = null)
     {
         var storeRuntimeContextProvider = new StoreRuntimeContextProvider();
         this.extractionOrchestrator = extractionOrchestrator ?? new ExtractionOrchestrator();
@@ -400,6 +402,7 @@ public partial class MainWindowViewModel : ViewModelBase
         this.themeService = themeService ?? new ThemeService();
         this.setupSettingsService = setupSettingsService ?? new SetupSettingsService();
         this.settingsMigrationService = settingsMigrationService ?? new GuiSettingsMigrationService();
+        this.supportDiagnosticsExportService = supportDiagnosticsExportService ?? new SupportDiagnosticsExportService(storeRuntimeContextProvider: storeRuntimeContextProvider);
         this.entitlementService = entitlementService ?? new SupabaseEntitlementService();
         this.storeAddOnCatalogService = storeAddOnCatalogService ?? StoreAddOnCatalogServiceFactory.CreateDefault();
         this.accountLinkService = accountLinkService ?? new AccountLinkService(storeRuntimeContextProvider: storeRuntimeContextProvider);
@@ -510,6 +513,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool CanRestoreStorePurchase => !IsAccountLinkBusy && IsStoreInstall && activeAccountLinkSnapshot.HasActiveSession;
 
+    public bool CanExportSupportDiagnostics => IsStoreInstall || activeAccountLinkSnapshot.HasState || !string.IsNullOrWhiteSpace(LastError);
+
+    public bool ShowStoreRestoreRequiresSignInHint => ShouldPromptForStoreContinuityLink(activeAccountLinkSnapshot);
+
     public bool HasStoreContinuityPrompt => IsStoreInstall && !HasVerifiedStoreContinuity(activeAccountLinkSnapshot);
 
     public string StoreContinuityPromptTitle => GetStoreContinuityPromptTitle();
@@ -540,6 +547,7 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnLastErrorChanged(string? value)
     {
         OnPropertyChanged(nameof(StatusLine));
+        OnPropertyChanged(nameof(CanExportSupportDiagnostics));
     }
 
     partial void OnDatasetDownloadMessageChanged(string value)
@@ -562,6 +570,8 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanConfigureAutoUpdatePolicy));
         OnPropertyChanged(nameof(CanRefreshStoreAddOnCatalog));
         OnPropertyChanged(nameof(CanRestoreStorePurchase));
+        OnPropertyChanged(nameof(CanExportSupportDiagnostics));
+        OnPropertyChanged(nameof(ShowStoreRestoreRequiresSignInHint));
         OnPropertyChanged(nameof(HasStoreContinuityPrompt));
         OnPropertyChanged(nameof(StoreContinuityPromptTitle));
         OnPropertyChanged(nameof(StoreContinuityPromptMessage));
@@ -577,6 +587,7 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanStartAccountSignIn));
         OnPropertyChanged(nameof(CanRefreshAccountLink));
         OnPropertyChanged(nameof(CanRestoreStorePurchase));
+        OnPropertyChanged(nameof(CanExportSupportDiagnostics));
     }
 
     partial void OnIsLoadingStoreAddOnsChanged(bool value)
@@ -834,6 +845,48 @@ public partial class MainWindowViewModel : ViewModelBase
             }
 
             ApplyImportedMigrationConfiguration(result.Configuration);
+            StatusMessage = result.Message;
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            StatusMessage = ex.Message;
+        }
+    }
+
+    public async Task ExportSupportDiagnosticsAsync(string path)
+    {
+        var existingLastError = LastError ?? string.Empty;
+        LastError = null;
+
+        try
+        {
+            var result = await supportDiagnosticsExportService.ExportAsync(
+                path,
+                new SupportDiagnosticsSnapshot
+                {
+                    CurrentVersion = CurrentVersion,
+                    IsStoreInstall = IsStoreInstall,
+                    StatusMessage = StatusMessage,
+                    LastError = existingLastError,
+                    AccountLinkStatusMessage = AccountLinkStatusMessage,
+                    AccountLinkSnapshot = activeAccountLinkSnapshot,
+                    EntitlementSnapshot = activeEntitlementSnapshot,
+                    HasStoreContinuityPrompt = HasStoreContinuityPrompt,
+                    StoreContinuityPromptTitle = StoreContinuityPromptTitle,
+                    StoreContinuityPromptMessage = StoreContinuityPromptMessage,
+                    CanRestoreStorePurchase = CanRestoreStorePurchase,
+                    StoreAddOnCatalogMessage = StoreAddOnCatalogMessage
+                },
+                CancellationToken.None);
+
+            if (result.IsSuccess)
+            {
+                StatusMessage = result.Message;
+                return;
+            }
+
+            LastError = result.Message;
             StatusMessage = result.Message;
         }
         catch (Exception ex)
@@ -2380,6 +2433,8 @@ public partial class MainWindowViewModel : ViewModelBase
         CanClearAccountLink = activeAccountLinkSnapshot.HasState;
         OnPropertyChanged(nameof(CanRefreshAccountLink));
         OnPropertyChanged(nameof(CanRestoreStorePurchase));
+        OnPropertyChanged(nameof(CanExportSupportDiagnostics));
+        OnPropertyChanged(nameof(ShowStoreRestoreRequiresSignInHint));
         OnPropertyChanged(nameof(HasStoreContinuityPrompt));
         OnPropertyChanged(nameof(StoreContinuityPromptTitle));
         OnPropertyChanged(nameof(StoreContinuityPromptMessage));
