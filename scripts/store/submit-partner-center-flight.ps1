@@ -156,6 +156,24 @@ function Invoke-PartnerCenterRequest {
     return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers
 }
 
+function Get-OptionalObjectPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()][object]$InputObject,
+        [Parameter(Mandatory = $true)][string]$PropertyName
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+
+    $property = $InputObject.PSObject.Properties[$PropertyName]
+    if ($null -eq $property) {
+        return $null
+    }
+
+    return $property.Value
+}
+
 function New-PackageUploadArchive {
     param(
         [Parameter(Mandatory = $true)][string]$SourcePackagePath,
@@ -336,8 +354,8 @@ $submissionsUri = "$submissionOwnerUri/submissions"
 $token = Get-PartnerCenterAccessToken -ResolvedTenantId $TenantId -ResolvedClientId $ClientId -ResolvedClientSecret $ClientSecret
 $submissionOwner = Invoke-PartnerCenterRequest -Method Get -Uri $submissionOwnerUri -AccessToken $token
 
-$pendingSubmission = $submissionOwner.$pendingSubmissionPropertyName
-$publishedSubmission = $submissionOwner.$publishedSubmissionPropertyName
+$pendingSubmission = Get-OptionalObjectPropertyValue -InputObject $submissionOwner -PropertyName $pendingSubmissionPropertyName
+$publishedSubmission = Get-OptionalObjectPropertyValue -InputObject $submissionOwner -PropertyName $publishedSubmissionPropertyName
 
 $pendingSubmissionId = if ($null -ne $pendingSubmission) { [string]$pendingSubmission.id } else { '' }
 $publishedSubmissionId = if ($null -ne $publishedSubmission) { [string]$publishedSubmission.id } else { '' }
