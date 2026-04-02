@@ -15,16 +15,24 @@ on:
         description: Mark the GitHub Release as a prerelease during workflow_dispatch
         required: false
         default: 'false'
+      prepare_canary_flight:
+        description: Stage the canary private-flight package and run local identity validation during workflow_dispatch
+        required: false
+        default: 'true'
+      submit_canary_flight:
+        description: Submit the prepared canary private flight to Partner Center during workflow_dispatch
+        required: false
+        default: 'true'
       prepare_store_publish:
         description: Stage production Store submission artifacts and run local identity validation during workflow_dispatch
         required: false
-        default: 'false'
+        default: 'true'
       submit_store_publish:
         description: Submit the prepared production Store package to Partner Center during workflow_dispatch
         required: false
         default: 'false'
       force_replace_pending_store_submission:
-        description: Replace an existing pending production Store submission when submit_store_publish=true
+        description: Replace an existing pending canary or production Store submission when a Store submit path is requested
         required: false
         default: 'false'
   workflow_run:
@@ -52,6 +60,8 @@ jobs:
       release_tag: ${{ steps.evaluate.outputs.release_tag }}
       should_package_bundle: ${{ steps.evaluate.outputs.should_package_bundle }}
       should_publish_github_release: ${{ steps.evaluate.outputs.should_publish_github_release }}
+      should_prepare_canary: ${{ steps.evaluate.outputs.should_prepare_canary }}
+      should_submit_canary: ${{ steps.evaluate.outputs.should_submit_canary }}
       should_prepare_store: ${{ steps.evaluate.outputs.should_prepare_store }}
       should_submit_store: ${{ steps.evaluate.outputs.should_submit_store }}
     env:
@@ -90,6 +100,8 @@ jobs:
           $eventName = $env:GITHUB_EVENT_NAME
           $manualBuildBundle = '${{ inputs.build_release_bundle }}' -eq 'true'
           $manualRelease = '${{ inputs.enable_github_release_publish }}' -eq 'true'
+          $manualCanaryPrepare = '${{ inputs.prepare_canary_flight }}' -eq 'true'
+          $manualCanarySubmit = '${{ inputs.submit_canary_flight }}' -eq 'true'
           $manualStorePrepare = '${{ inputs.prepare_store_publish }}' -eq 'true'
           $manualStoreSubmit = '${{ inputs.submit_store_publish }}' -eq 'true'
 
@@ -97,6 +109,8 @@ jobs:
           $releaseTag = ''
           $shouldPackageBundle = $false
           $shouldPublishGitHubRelease = $false
+          $shouldPrepareCanary = $false
+          $shouldSubmitCanary = $false
           $shouldPrepareStore = $false
           $shouldSubmitStore = $false
 
@@ -150,12 +164,14 @@ jobs:
               }
 
               $shouldPublishGitHubRelease = $manualRelease
+              $shouldPrepareCanary = $manualCanaryPrepare -or $manualCanarySubmit
+              $shouldSubmitCanary = $manualCanarySubmit
               $shouldPrepareStore = $manualStorePrepare -or $manualStoreSubmit
               $shouldSubmitStore = $manualStoreSubmit
-              $shouldPackageBundle = $manualBuildBundle -or $manualRelease -or $manualStorePrepare -or $manualStoreSubmit
+              $shouldPackageBundle = $manualBuildBundle -or $manualRelease -or $manualCanaryPrepare -or $manualCanarySubmit -or $manualStorePrepare -or $manualStoreSubmit
 
-              if (($manualRelease -or $manualStorePrepare -or $manualStoreSubmit) -and [string]::IsNullOrWhiteSpace($releaseTag)) {
-                throw 'Manual GitHub Release and Store operations must run from a v* tag ref.'
+              if (($manualRelease -or $manualCanaryPrepare -or $manualCanarySubmit -or $manualStorePrepare -or $manualStoreSubmit) -and [string]::IsNullOrWhiteSpace($releaseTag)) {
+                throw 'Manual GitHub Release, canary flight, and production Store operations must run from a v* tag ref.'
               }
 
               if ($shouldPackageBundle) {
@@ -204,6 +220,10 @@ jobs:
               else {
                 $shouldPublishGitHubRelease = $true
                 $shouldPackageBundle = $true
+                $shouldPrepareCanary = $true
+                $shouldSubmitCanary = $true
+                $shouldPrepareStore = $true
+                $shouldSubmitStore = $true
                 Write-Host "Release is eligible for tag $releaseTag on SHA $sourceSha."
               }
             }
@@ -213,6 +233,8 @@ jobs:
           Set-ActionOutput 'release_tag' $releaseTag
           Set-ActionOutput 'should_package_bundle' ([string]$shouldPackageBundle).ToLowerInvariant()
           Set-ActionOutput 'should_publish_github_release' ([string]$shouldPublishGitHubRelease).ToLowerInvariant()
+          Set-ActionOutput 'should_prepare_canary' ([string]$shouldPrepareCanary).ToLowerInvariant()
+          Set-ActionOutput 'should_submit_canary' ([string]$shouldSubmitCanary).ToLowerInvariant()
           Set-ActionOutput 'should_prepare_store' ([string]$shouldPrepareStore).ToLowerInvariant()
           Set-ActionOutput 'should_submit_store' ([string]$shouldSubmitStore).ToLowerInvariant()
 
@@ -306,7 +328,7 @@ jobs:
           INCLUDE_GITHUB_RELEASE_MSIX: ${{ vars.INCLUDE_GITHUB_RELEASE_MSIX }}
         run: |
           $includeMsixInRelease = [string]::Equals($env:INCLUDE_GITHUB_RELEASE_MSIX, 'true', [System.StringComparison]::OrdinalIgnoreCase)
-          $buildMsixPackage = $includeMsixInRelease -or '${{ needs.release-gate.outputs.should_prepare_store }}' -eq 'true'
+          $buildMsixPackage = $includeMsixInRelease -or '${{ needs.release-gate.outputs.should_prepare_canary }}' -eq 'true' -or '${{ needs.release-gate.outputs.should_prepare_store }}' -eq 'true'
 
           Write-Host "Resolved MSIX policy: include_msix_in_release=$includeMsixInRelease build_msix_package=$buildMsixPackage"
 
@@ -750,6 +772,189 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "gh release upload failed for tag $tag with exit code $LASTEXITCODE."
           }
+
+  partner-center-canary-prepare:
+    needs:
+      - release-gate
+      - build-package-bundle
+    if: ${{ needs.release-gate.outputs.should_prepare_canary == 'true' }}
+    runs-on: windows-latest
+    environment:
+      name: ${{ 'canary-package-flight' }}
+    env:
+      VERSION: ${{ needs.build-package-bundle.outputs.version }}
+      RELEASE_ARTIFACT_NAME: ${{ needs.build-package-bundle.outputs.artifact_name }}
+      PARTNER_CENTER_APPLICATION_ID: ${{ secrets.PARTNER_CENTER_APPLICATION_ID }}
+      PARTNER_CENTER_CANARY_FLIGHT_ID: ${{ vars.PARTNER_CENTER_CANARY_FLIGHT_ID }}
+      PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE: ${{ vars.PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE }}
+      MSIX_PACKAGE_IDENTITY_NAME: ${{ vars.MSIX_PACKAGE_IDENTITY_NAME }}
+      MSIX_PACKAGE_PUBLISHER: ${{ vars.MSIX_PACKAGE_PUBLISHER }}
+      MSIX_DIR: artifacts/store-canary/msix
+      STORE_EVIDENCE_DIR: artifacts/store-canary/partner-center
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-gate.outputs.source_sha }}
+
+      - name: Download canonical release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.RELEASE_ARTIFACT_NAME }}
+          path: artifacts/release/${{ env.VERSION }}
+
+      - name: Validate required canary flight metadata
+        shell: pwsh
+        run: |
+          foreach ($requiredName in @(
+            'PARTNER_CENTER_APPLICATION_ID',
+            'PARTNER_CENTER_CANARY_FLIGHT_ID',
+            'MSIX_PACKAGE_IDENTITY_NAME',
+            'MSIX_PACKAGE_PUBLISHER'
+          )) {
+            $requiredValue = [Environment]::GetEnvironmentVariable($requiredName)
+            if ([string]::IsNullOrWhiteSpace($requiredValue)) {
+              throw "Required canary-package-flight value '$requiredName' is missing. Configure the protected canary-package-flight environment first."
+            }
+          }
+
+      - name: Stage canary flight package and local identity validation
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path $env:MSIX_DIR -Force | Out-Null
+          New-Item -ItemType Directory -Path $env:STORE_EVIDENCE_DIR -Force | Out-Null
+
+          $releaseRoot = [System.IO.Path]::GetFullPath((Join-Path 'artifacts/release' $env:VERSION))
+          $msixAsset = Get-ChildItem -LiteralPath (Join-Path $releaseRoot 'msix') -File -Filter 'NWSHelper-*.msix' |
+            Sort-Object Name |
+            Select-Object -First 1
+
+          if ($null -eq $msixAsset) {
+            throw "Could not find MSIX asset under $(Join-Path $releaseRoot 'msix')."
+          }
+
+          $preparedPackagePath = Join-Path ([System.IO.Path]::GetFullPath($env:MSIX_DIR)) $msixAsset.Name
+          Copy-Item -LiteralPath $msixAsset.FullName -Destination $preparedPackagePath -Force
+
+          $targetPublishMode = if ([string]::IsNullOrWhiteSpace($env:PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE)) { 'Manual' } else { $env:PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE }
+          $evidencePath = Join-Path ([System.IO.Path]::GetFullPath($env:STORE_EVIDENCE_DIR)) 'partner-center-canary-validation.json'
+
+          $submissionParameters = @{
+            SubmissionTarget = 'Flight'
+            ApplicationId = $env:PARTNER_CENTER_APPLICATION_ID
+            FlightId = $env:PARTNER_CENTER_CANARY_FLIGHT_ID
+            PackagePath = $preparedPackagePath
+            ExpectedPackageIdentityName = $env:MSIX_PACKAGE_IDENTITY_NAME
+            ExpectedPackagePublisher = $env:MSIX_PACKAGE_PUBLISHER
+            TargetPublishMode = $targetPublishMode
+            EvidenceOutputPath = $evidencePath
+            ValidateOnly = $true
+          }
+
+          if ('${{ inputs.force_replace_pending_store_submission }}' -eq 'true') {
+            $submissionParameters.ForceReplacePendingSubmission = $true
+          }
+
+          ./scripts/store/submit-partner-center-flight.ps1 @submissionParameters
+
+      - name: Upload canary flight prepare artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner-center-canary-package-${{ env.VERSION }}
+          path: |
+            ${{ env.MSIX_DIR }}
+            ${{ env.STORE_EVIDENCE_DIR }}
+
+  partner-center-canary-submit:
+    needs:
+      - release-gate
+      - build-package-bundle
+      - partner-center-canary-prepare
+    if: ${{ needs.release-gate.outputs.should_submit_canary == 'true' }}
+    runs-on: windows-latest
+    environment:
+      name: ${{ 'canary-package-flight' }}
+    env:
+      VERSION: ${{ needs.build-package-bundle.outputs.version }}
+      MSIX_DIR: artifacts/store-canary/msix
+      STORE_EVIDENCE_DIR: artifacts/store-canary/partner-center
+      PARTNER_CENTER_TENANT_ID: ${{ secrets.PARTNER_CENTER_TENANT_ID }}
+      PARTNER_CENTER_CLIENT_ID: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
+      PARTNER_CENTER_CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
+      PARTNER_CENTER_APPLICATION_ID: ${{ secrets.PARTNER_CENTER_APPLICATION_ID }}
+      PARTNER_CENTER_CANARY_FLIGHT_ID: ${{ vars.PARTNER_CENTER_CANARY_FLIGHT_ID }}
+      PARTNER_CENTER_CANARY_SUBMISSION_NOTES: ${{ vars.PARTNER_CENTER_CANARY_SUBMISSION_NOTES }}
+      PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE: ${{ vars.PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE }}
+      MSIX_PACKAGE_IDENTITY_NAME: ${{ vars.MSIX_PACKAGE_IDENTITY_NAME }}
+      MSIX_PACKAGE_PUBLISHER: ${{ vars.MSIX_PACKAGE_PUBLISHER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-gate.outputs.source_sha }}
+
+      - name: Download canary flight package
+        uses: actions/download-artifact@v4
+        with:
+          name: partner-center-canary-package-${{ env.VERSION }}
+          path: artifacts/store-canary
+
+      - name: Validate required canary flight submission secrets
+        shell: pwsh
+        run: |
+          foreach ($requiredName in @(
+            'PARTNER_CENTER_TENANT_ID',
+            'PARTNER_CENTER_CLIENT_ID',
+            'PARTNER_CENTER_CLIENT_SECRET',
+            'PARTNER_CENTER_APPLICATION_ID',
+            'PARTNER_CENTER_CANARY_FLIGHT_ID',
+            'MSIX_PACKAGE_IDENTITY_NAME',
+            'MSIX_PACKAGE_PUBLISHER'
+          )) {
+            $requiredValue = [Environment]::GetEnvironmentVariable($requiredName)
+            if ([string]::IsNullOrWhiteSpace($requiredValue)) {
+              throw "Required canary-package-flight value '$requiredName' is missing. Configure the protected canary-package-flight environment first."
+            }
+          }
+
+      - name: Submit prepared canary flight package
+        shell: pwsh
+        run: |
+          $packagePath = Get-ChildItem -LiteralPath $env:MSIX_DIR -File -Filter 'NWSHelper-*.msix' |
+            Sort-Object Name |
+            Select-Object -First 1 -ExpandProperty FullName
+
+          if ([string]::IsNullOrWhiteSpace($packagePath)) {
+            throw "Could not find prepared MSIX under $env:MSIX_DIR."
+          }
+
+          $targetPublishMode = if ([string]::IsNullOrWhiteSpace($env:PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE)) { 'Immediate' } else { $env:PARTNER_CENTER_CANARY_TARGET_PUBLISH_MODE }
+
+          $submissionParameters = @{
+            SubmissionTarget = 'Flight'
+            ApplicationId = $env:PARTNER_CENTER_APPLICATION_ID
+            FlightId = $env:PARTNER_CENTER_CANARY_FLIGHT_ID
+            PackagePath = $packagePath
+            TenantId = $env:PARTNER_CENTER_TENANT_ID
+            ClientId = $env:PARTNER_CENTER_CLIENT_ID
+            ClientSecret = $env:PARTNER_CENTER_CLIENT_SECRET
+            SubmissionNotes = $env:PARTNER_CENTER_CANARY_SUBMISSION_NOTES
+            TargetPublishMode = $targetPublishMode
+            ExpectedPackageIdentityName = $env:MSIX_PACKAGE_IDENTITY_NAME
+            ExpectedPackagePublisher = $env:MSIX_PACKAGE_PUBLISHER
+            ForceReplacePendingSubmission = $true
+            EvidenceOutputPath = (Join-Path $env:STORE_EVIDENCE_DIR 'partner-center-canary-submission.json')
+          }
+
+          ./scripts/store/submit-partner-center-flight.ps1 @submissionParameters
+
+      - name: Upload canary flight submission evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner-center-canary-submission-${{ env.VERSION }}
+          path: |
+            ${{ env.MSIX_DIR }}
+            ${{ env.STORE_EVIDENCE_DIR }}
 
   partner-center-production-prepare:
     needs:
