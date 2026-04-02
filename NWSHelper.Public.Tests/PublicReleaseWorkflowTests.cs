@@ -14,6 +14,7 @@ public class PublicReleaseWorkflowTests
 
         var workflow = File.ReadAllText(workflowPath);
         var normalizedWorkflow = workflow.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var canaryPrepareSection = GetSection(normalizedWorkflow, "  partner-center-canary-prepare:\n", "  partner-center-canary-submit:\n");
         var canarySubmitSection = GetSection(normalizedWorkflow, "  partner-center-canary-submit:\n", "  partner-center-production-prepare:\n");
         var productionPrepareSection = GetSection(normalizedWorkflow, "  partner-center-production-prepare:\n", "  partner-center-production-submit:\n");
         var productionSubmitSection = GetSection(normalizedWorkflow, "  partner-center-production-submit:\n");
@@ -44,6 +45,14 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("partner-center-canary-package-${{ env.VERSION }}", workflow, StringComparison.Ordinal);
         Assert.Contains("partner-center-canary-submission-${{ env.VERSION }}", workflow, StringComparison.Ordinal);
         Assert.Contains("SubmissionTarget = 'Flight'", workflow, StringComparison.Ordinal);
+        Assert.Contains("PARTNER_CENTER_APPLICATION_ID: ${{ vars.PARTNER_CENTER_APPLICATION_ID || secrets.PARTNER_CENTER_APPLICATION_ID }}", canaryPrepareSection, StringComparison.Ordinal);
+        Assert.Contains("PARTNER_CENTER_TENANT_ID: ${{ vars.PARTNER_CENTER_TENANT_ID || secrets.PARTNER_CENTER_TENANT_ID }}", canarySubmitSection, StringComparison.Ordinal);
+        Assert.Contains("PARTNER_CENTER_CLIENT_ID: ${{ vars.PARTNER_CENTER_CLIENT_ID || secrets.PARTNER_CENTER_CLIENT_ID }}", canarySubmitSection, StringComparison.Ordinal);
+        Assert.Contains("PARTNER_CENTER_APPLICATION_ID: ${{ vars.PARTNER_CENTER_APPLICATION_ID || secrets.PARTNER_CENTER_APPLICATION_ID }}", canarySubmitSection, StringComparison.Ordinal);
+        Assert.Contains("PARTNER_CENTER_APPLICATION_ID: ${{ vars.PARTNER_CENTER_APPLICATION_ID || secrets.PARTNER_CENTER_APPLICATION_ID }}", productionPrepareSection, StringComparison.Ordinal);
+        Assert.Contains("PARTNER_CENTER_TENANT_ID: ${{ vars.PARTNER_CENTER_TENANT_ID || secrets.PARTNER_CENTER_TENANT_ID }}", productionSubmitSection, StringComparison.Ordinal);
+        Assert.Contains("PARTNER_CENTER_CLIENT_ID: ${{ vars.PARTNER_CENTER_CLIENT_ID || secrets.PARTNER_CENTER_CLIENT_ID }}", productionSubmitSection, StringComparison.Ordinal);
+        Assert.Contains("PARTNER_CENTER_CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}", productionSubmitSection, StringComparison.Ordinal);
         Assert.Contains("prepare_canary_flight:\n        description: Stage the canary private-flight package and run local identity validation during workflow_dispatch\n        required: false\n        default: 'true'", normalizedWorkflow, StringComparison.Ordinal);
         Assert.Contains("submit_canary_flight:\n        description: Submit the prepared canary private flight to Partner Center during workflow_dispatch\n        required: false\n        default: 'true'", normalizedWorkflow, StringComparison.Ordinal);
         Assert.Contains("prepare_store_publish:\n        description: Stage production Store submission artifacts and run local identity validation during workflow_dispatch\n        required: false\n        default: 'true'", normalizedWorkflow, StringComparison.Ordinal);
