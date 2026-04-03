@@ -922,43 +922,7 @@ function Start-Sleep {
         return $$"""
 $global:SubmissionGetCount = 0
 $global:UpdatePutCount = 0
-$listenerReservation = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-$listenerReservation.Start()
-$listenerPort = $listenerReservation.LocalEndpoint.Port
-$listenerReservation.Stop()
-$global:errorListenerPrefix = "http://127.0.0.1:$listenerPort/"
 $global:errorPayload = '{ "code": "InvalidParameterValue", "message": "Please keep all file entries for existing packages. If you wish to remove a package, mark it as PendingDelete. The following packages are missing in your update: 2000000000093982100", "target": "packages" }'
-$global:errorListenerJob = $null
-
-function Start-PartnerCenterErrorListener {
-    param(
-        [string]$Prefix,
-        [string]$Payload
-    )
-
-    return Start-Job -ScriptBlock {
-        param($ListenerPrefix, $ListenerPayload)
-
-        $listener = [System.Net.HttpListener]::new()
-        $listener.Prefixes.Add($ListenerPrefix)
-        $listener.Start()
-
-        try {
-            $context = $listener.GetContext()
-            $response = $context.Response
-            $response.StatusCode = 400
-            $response.ContentType = 'application/json'
-            $payloadBytes = [System.Text.Encoding]::UTF8.GetBytes($ListenerPayload)
-            $response.OutputStream.Write($payloadBytes, 0, $payloadBytes.Length)
-            $response.OutputStream.Close()
-            $response.Close()
-        }
-        finally {
-            $listener.Stop()
-            $listener.Close()
-        }
-    } -ArgumentList $Prefix, $Payload
-}
 
 function Invoke-RestMethod {
     param(
@@ -1031,8 +995,17 @@ function Invoke-RestMethod {
                 throw 'Expected first update payload to lack a package id.'
             }
 
-            $global:errorListenerJob = Start-PartnerCenterErrorListener -Prefix $global:errorListenerPrefix -Payload $global:errorPayload
-            Microsoft.PowerShell.Utility\Invoke-RestMethod -Method Put -Uri $global:errorListenerPrefix -ContentType 'application/json' -Body '{"probe":true}'
+            $fakeResponse = [pscustomobject]@{
+                Payload = $global:errorPayload
+            }
+            $fakeResponse | Add-Member -MemberType ScriptMethod -Name GetResponseStream -Value {
+                return [System.IO.MemoryStream]::new([System.Text.Encoding]::UTF8.GetBytes($this.Payload))
+            }
+
+            $exception = [System.Exception]::new('The remote server returned an error: (400) Bad Request.')
+            $exception | Add-Member -MemberType NoteProperty -Name Response -Value $fakeResponse
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($exception, 'InvalidParameterValue', [System.Management.Automation.ErrorCategory]::InvalidData, $null)
+            throw $errorRecord
         }
 
         if ($packageId -ne '2000000000093982100') {
@@ -1062,33 +1035,24 @@ function Invoke-WebRequest {
 }
 
 function Start-Sleep {
-    param([int]$Seconds)
+        param([int]$Seconds)
 }
 
-try {
-    & {{ToPowerShellLiteral(scriptPath)}} `
-      -SubmissionTarget Flight `
-      -ApplicationId public-store-app `
-      -FlightId test-flight `
-      -PackagePath {{ToPowerShellLiteral(packagePath)}} `
-      -TenantId tenant-id `
-      -ClientId client-id `
-      -ClientSecret client-secret `
-      -ExpectedPackageIdentityName NWSHelper.NWSHelper `
-      -ExpectedPackagePublisher 'CN=NWS Helper' `
-      -TargetPublishMode Immediate `
-      -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
-      -StatusPollIntervalSeconds 1 `
-      -CommitStatusTimeoutMinutes 1 `
-      -ForceReplacePendingSubmission
-}
-finally {
-    if ($null -ne $global:errorListenerJob) {
-        Wait-Job $global:errorListenerJob | Out-Null
-        Receive-Job $global:errorListenerJob | Out-Null
-        Remove-Job $global:errorListenerJob
-    }
-}
+& {{ToPowerShellLiteral(scriptPath)}} `
+    -SubmissionTarget Flight `
+    -ApplicationId public-store-app `
+    -FlightId test-flight `
+    -PackagePath {{ToPowerShellLiteral(packagePath)}} `
+    -TenantId tenant-id `
+    -ClientId client-id `
+    -ClientSecret client-secret `
+    -ExpectedPackageIdentityName NWSHelper.NWSHelper `
+    -ExpectedPackagePublisher 'CN=NWS Helper' `
+    -TargetPublishMode Immediate `
+    -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
+    -StatusPollIntervalSeconds 1 `
+    -CommitStatusTimeoutMinutes 1 `
+    -ForceReplacePendingSubmission
 """;
     }
 
