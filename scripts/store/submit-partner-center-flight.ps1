@@ -139,6 +139,58 @@ function Get-PartnerCenterAccessToken {
     return $tokenResponse.access_token
 }
 
+function Get-PartnerCenterErrorResponseBodyText {
+    param([Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $responseBodyText = ''
+
+    try {
+        $responseProperty = $ErrorRecord.Exception.PSObject.Properties['Response']
+        $response = if ($null -ne $responseProperty) { $responseProperty.Value } else { $null }
+        if ($null -eq $response) {
+            return ''
+        }
+
+        $contentProperty = $response.PSObject.Properties['Content']
+        $content = if ($null -ne $contentProperty) { $contentProperty.Value } else { $null }
+        if ($null -ne $content) {
+            $readAsStringAsyncMethod = $content.PSObject.Methods['ReadAsStringAsync']
+            if ($null -ne $readAsStringAsyncMethod) {
+                $readTask = $content.ReadAsStringAsync()
+                if ($null -ne $readTask) {
+                    $responseBodyText = [string]$readTask.GetAwaiter().GetResult()
+                }
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($responseBodyText)) {
+            $getResponseStreamMethod = $response.PSObject.Methods['GetResponseStream']
+            if ($null -ne $getResponseStreamMethod) {
+                $responseStream = $response.GetResponseStream()
+                if ($null -ne $responseStream) {
+                    try {
+                        $streamReader = [System.IO.StreamReader]::new($responseStream)
+                        try {
+                            $responseBodyText = $streamReader.ReadToEnd()
+                        }
+                        finally {
+                            $streamReader.Dispose()
+                        }
+                    }
+                    finally {
+                        $responseStream.Dispose()
+                    }
+                }
+            }
+        }
+    }
+    catch {
+        return ''
+    }
+
+    return $responseBodyText
+}
+
 function Invoke-PartnerCenterRequest {
     param(
         [Parameter(Mandatory = $true)][string]$Method,
@@ -148,12 +200,25 @@ function Invoke-PartnerCenterRequest {
     )
 
     $headers = @{ Authorization = "Bearer $AccessToken" }
-    if ($PSBoundParameters.ContainsKey('Body')) {
-        $jsonBody = $Body | ConvertTo-Json -Depth 30
-        return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers -ContentType 'application/json' -Body $jsonBody
-    }
+    try {
+        if ($PSBoundParameters.ContainsKey('Body')) {
+            $jsonBody = $Body | ConvertTo-Json -Depth 30
+            return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers -ContentType 'application/json' -Body $jsonBody
+        }
 
-    return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers
+        return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers
+    }
+    catch {
+        $responseBodyText = Get-PartnerCenterErrorResponseBodyText -ErrorRecord $_
+        $errorDetailsMessage = if ($null -ne $_.ErrorDetails) { [string]$_.ErrorDetails.Message } else { '' }
+        if ([string]::IsNullOrWhiteSpace($responseBodyText) -or -not [string]::IsNullOrWhiteSpace($errorDetailsMessage)) {
+            throw
+        }
+
+        $enrichedError = [System.Management.Automation.ErrorRecord]::new($_.Exception, $_.FullyQualifiedErrorId, $_.CategoryInfo.Category, $_.TargetObject)
+        $enrichedError.ErrorDetails = [System.Management.Automation.ErrorDetails]::new($responseBodyText)
+        throw $enrichedError
+    }
 }
 
 function Get-OptionalObjectPropertyValue {
@@ -225,56 +290,26 @@ function Get-PartnerCenterPackageEntries {
 function Get-MissingPackageIdsFromPartnerCenterError {
     param([Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord)
 
-    $responseBodyText = ''
-    try {
-        $response = Get-OptionalObjectPropertyValue -InputObject $ErrorRecord.Exception -PropertyName 'Response'
-        if ($null -ne $response) {
-            $content = Get-OptionalObjectPropertyValue -InputObject $response -PropertyName 'Content'
-            if ($null -ne $content) {
-                $readAsStringAsyncMethod = $content.PSObject.Methods['ReadAsStringAsync']
-                if ($null -ne $readAsStringAsyncMethod) {
-                    $readTask = $content.ReadAsStringAsync()
-                    if ($null -ne $readTask) {
-                        $responseBodyText = [string]$readTask.GetAwaiter().GetResult()
-                    }
-                }
-            }
-
-            if ([string]::IsNullOrWhiteSpace($responseBodyText)) {
-                $getResponseStreamMethod = $response.PSObject.Methods['GetResponseStream']
-                if ($null -ne $getResponseStreamMethod) {
-                    $responseStream = $response.GetResponseStream()
-                    if ($null -ne $responseStream) {
-                        try {
-                            $streamReader = [System.IO.StreamReader]::new($responseStream)
-                            try {
-                                $responseBodyText = $streamReader.ReadToEnd()
-                            }
-                            finally {
-                                $streamReader.Dispose()
-                            }
-                        }
-                        finally {
-                            $responseStream.Dispose()
-                        }
-                    }
-                }
-            }
-        }
-    }
-    catch {
-        $responseBodyText = ''
-    }
+    $responseBodyText = Get-PartnerCenterErrorResponseBodyText -ErrorRecord $ErrorRecord
 
     $errorDetailsMessage = ''
     if ($null -ne $ErrorRecord.ErrorDetails) {
         $errorDetailsMessage = [string]$ErrorRecord.ErrorDetails.Message
     }
 
+    $formattedErrorText = ''
+    try {
+        $formattedErrorText = [string]($ErrorRecord | Out-String)
+    }
+    catch {
+        $formattedErrorText = ''
+    }
+
     $candidateTexts = @(
         $responseBodyText,
         [string]$ErrorRecord.Exception.Message,
         $errorDetailsMessage,
+        $formattedErrorText,
         [string]$ErrorRecord.ToString()
     )
 
