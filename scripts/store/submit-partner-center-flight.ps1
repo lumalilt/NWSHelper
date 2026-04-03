@@ -208,6 +208,20 @@ function New-PartnerCenterPackageEntry {
     return [pscustomobject]$packageEntry
 }
 
+function Get-PartnerCenterPackageEntries {
+    param(
+        [AllowNull()][object]$SubmissionObject,
+        [Parameter(Mandatory = $true)][string]$PackageCollectionPropertyName
+    )
+
+    $packageEntries = Get-OptionalObjectPropertyValue -InputObject $SubmissionObject -PropertyName $PackageCollectionPropertyName
+    if ($null -eq $packageEntries) {
+        return ,@()
+    }
+
+    return ,@($packageEntries)
+}
+
 function New-PackageUploadArchive {
     param(
         [Parameter(Mandatory = $true)][string]$SourcePackagePath,
@@ -433,7 +447,17 @@ finally {
     }
 }
 
-$existingPackages = @(Get-OptionalObjectPropertyValue -InputObject $submission -PropertyName $packageCollectionPropertyName)
+$existingPackages = Get-PartnerCenterPackageEntries -SubmissionObject $submission -PackageCollectionPropertyName $packageCollectionPropertyName
+if ($existingPackages.Count -eq 0) {
+    $existingPackages = Get-PartnerCenterPackageEntries -SubmissionObject $newSubmission -PackageCollectionPropertyName $packageCollectionPropertyName
+}
+
+if ($existingPackages.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($publishedSubmissionId)) {
+    $publishedSubmissionUri = "$submissionsUri/$publishedSubmissionId"
+    $publishedSubmissionDetails = Invoke-PartnerCenterRequest -Method Get -Uri $publishedSubmissionUri -AccessToken $token
+    $existingPackages = Get-PartnerCenterPackageEntries -SubmissionObject $publishedSubmissionDetails -PackageCollectionPropertyName $packageCollectionPropertyName
+}
+
 if ($existingPackages.Count -gt 1) {
     throw "Partner Center submission $submissionId contains $($existingPackages.Count) existing package entries. Automated replacement currently supports exactly one package entry."
 }
