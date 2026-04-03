@@ -120,6 +120,34 @@ public class SubmitPartnerCenterFlightScriptTests
         }
     }
 
+    [Fact]
+    public void SubmitPartnerCenterFlightScript_FlightSubmit_PreservesExistingPackageIdDuringUpdate()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
+        var packagePath = Path.Combine(root, "NWSHelper-1.2.3.0.msix");
+        var evidencePath = Path.Combine(root, "evidence", "partner-center-submission.json");
+
+        Directory.CreateDirectory(root);
+        WriteTestMsix(packagePath, identityName: "NWSHelper.NWSHelper", publisher: "CN=NWS Helper", version: "1.2.3.0");
+
+        try
+        {
+            var output = RunPowerShellBootstrap(BuildExistingPackageReplacementBootstrap(packagePath, evidencePath));
+
+            Assert.Equal("SubmissionCommitted", output["Status"]);
+            Assert.Equal("test-flight", output["FlightId"]);
+            Assert.Equal("submission-2", output["SubmissionId"]);
+            Assert.Equal("PreProcessing", output["SubmissionStatus"]);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     private static void WriteTestMsix(string packagePath, string identityName, string publisher, string version)
     {
         using var stream = File.Create(packagePath);
@@ -225,6 +253,126 @@ function Start-Sleep {
   -ExpectedPackageIdentityName NWSHelper.NWSHelper `
   -ExpectedPackagePublisher 'CN=NWS Helper' `
   -TargetPublishMode Manual `
+  -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
+  -StatusPollIntervalSeconds 1 `
+  -CommitStatusTimeoutMinutes 1 `
+  -ForceReplacePendingSubmission
+""";
+    }
+
+    private static string BuildExistingPackageReplacementBootstrap(string packagePath, string evidencePath)
+    {
+        var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+
+        return $$"""
+$global:SubmissionGetCount = 0
+
+function Invoke-RestMethod {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [string]$ContentType,
+        $Body
+    )
+
+    if ($Uri -like 'https://login.microsoftonline.com/*/oauth2/token') {
+        return [pscustomobject]@{ access_token = 'test-token' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight') {
+        return [pscustomobject]@{
+            lastPublishedFlightSubmission = [pscustomobject]@{ id = 'published-2' }
+        }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions') {
+        return [pscustomobject]@{ id = 'submission-2' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-2') {
+        $global:SubmissionGetCount++
+
+        if ($global:SubmissionGetCount -eq 1) {
+            return [pscustomobject]@{
+                id = 'submission-2'
+                fileUploadUrl = 'https://example.invalid/upload'
+                flightPackages = @(
+                    [pscustomobject]@{
+                        id = '2000000000093982100'
+                        fileName = 'NWSHelper-1.0.28.msix'
+                        fileStatus = 'Uploaded'
+                        minimumDirectXVersion = 'None'
+                        minimumSystemRam = 'None'
+                    }
+                )
+                targetPublishMode = 'Immediate'
+                targetPublishDate = $null
+                notesForCertification = ''
+                status = 'PendingCommit'
+                statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+            }
+        }
+
+        return [pscustomobject]@{
+            id = 'submission-2'
+            status = 'PreProcessing'
+            statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+        }
+    }
+
+    if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-2') {
+        $request = $Body | ConvertFrom-Json
+        if ($request.flightPackages.Count -ne 1) {
+            throw 'Expected exactly one flight package in update payload.'
+        }
+
+        $package = $request.flightPackages[0]
+        if ($package.id -ne '2000000000093982100') {
+            throw '{ "code": "InvalidParameterValue", "message": "Please keep all file entries for existing packages. If you wish to remove a package, mark it as PendingDelete. The following packages are missing in your update: 2000000000093982100", "target": "packages" }'
+        }
+
+        if ($package.fileName -ne 'NWSHelper-1.2.3.0.msix' -or $package.fileStatus -ne 'PendingUpload') {
+            throw 'Expected replacement package entry with PendingUpload status.'
+        }
+
+        return [pscustomobject]@{ id = 'submission-2' }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-2/commit') {
+        return [pscustomobject]@{ status = 'CommitStarted' }
+    }
+
+    throw "Unexpected Invoke-RestMethod call: $Method $Uri"
+}
+
+function Invoke-WebRequest {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [string]$InFile,
+        [string]$ContentType,
+        [hashtable]$Headers
+    )
+
+    return [pscustomobject]@{ StatusCode = 201 }
+}
+
+function Start-Sleep {
+    param([int]$Seconds)
+}
+
+& {{ToPowerShellLiteral(scriptPath)}} `
+  -SubmissionTarget Flight `
+  -ApplicationId public-store-app `
+  -FlightId test-flight `
+  -PackagePath {{ToPowerShellLiteral(packagePath)}} `
+  -TenantId tenant-id `
+  -ClientId client-id `
+  -ClientSecret client-secret `
+  -ExpectedPackageIdentityName NWSHelper.NWSHelper `
+  -ExpectedPackagePublisher 'CN=NWS Helper' `
+  -TargetPublishMode Immediate `
   -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
   -StatusPollIntervalSeconds 1 `
   -CommitStatusTimeoutMinutes 1 `

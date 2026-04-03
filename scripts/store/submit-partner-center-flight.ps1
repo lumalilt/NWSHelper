@@ -174,6 +174,40 @@ function Get-OptionalObjectPropertyValue {
     return $property.Value
 }
 
+function New-PartnerCenterPackageEntry {
+    param(
+        [Parameter(Mandatory = $true)][string]$FileName,
+        [Parameter(Mandatory = $true)][string]$FileStatus,
+        [AllowNull()][object]$ExistingPackage
+    )
+
+    $packageEntry = [ordered]@{
+        fileName = $FileName
+        fileStatus = $FileStatus
+        minimumDirectXVersion = 'None'
+        minimumSystemRam = 'None'
+    }
+
+    if ($null -ne $ExistingPackage) {
+        $existingPackageId = [string](Get-OptionalObjectPropertyValue -InputObject $ExistingPackage -PropertyName 'id')
+        if (-not [string]::IsNullOrWhiteSpace($existingPackageId)) {
+            $packageEntry.id = $existingPackageId
+        }
+
+        $existingMinimumDirectXVersion = [string](Get-OptionalObjectPropertyValue -InputObject $ExistingPackage -PropertyName 'minimumDirectXVersion')
+        if (-not [string]::IsNullOrWhiteSpace($existingMinimumDirectXVersion)) {
+            $packageEntry.minimumDirectXVersion = $existingMinimumDirectXVersion
+        }
+
+        $existingMinimumSystemRam = [string](Get-OptionalObjectPropertyValue -InputObject $ExistingPackage -PropertyName 'minimumSystemRam')
+        if (-not [string]::IsNullOrWhiteSpace($existingMinimumSystemRam)) {
+            $packageEntry.minimumSystemRam = $existingMinimumSystemRam
+        }
+    }
+
+    return [pscustomobject]$packageEntry
+}
+
 function New-PackageUploadArchive {
     param(
         [Parameter(Mandatory = $true)][string]$SourcePackagePath,
@@ -399,8 +433,15 @@ finally {
     }
 }
 
-$packageReference = [pscustomobject]@{ fileName = [System.IO.Path]::GetFileName($resolvedPackagePath) }
-$submission.$packageCollectionPropertyName = @($packageReference)
+$existingPackages = @(Get-OptionalObjectPropertyValue -InputObject $submission -PropertyName $packageCollectionPropertyName)
+if ($existingPackages.Count -gt 1) {
+    throw "Partner Center submission $submissionId contains $($existingPackages.Count) existing package entries. Automated replacement currently supports exactly one package entry."
+}
+
+$replacementPackage = if ($existingPackages.Count -eq 1) { $existingPackages[0] } else { $null }
+$submission.$packageCollectionPropertyName = @(
+    New-PartnerCenterPackageEntry -FileName ([System.IO.Path]::GetFileName($resolvedPackagePath)) -FileStatus 'PendingUpload' -ExistingPackage $replacementPackage
+)
 
 if (-not [string]::IsNullOrWhiteSpace($SubmissionNotes)) {
     $submission.notesForCertification = $SubmissionNotes
