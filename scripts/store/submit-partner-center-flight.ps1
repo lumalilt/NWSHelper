@@ -225,21 +225,35 @@ function Get-PartnerCenterPackageEntries {
 function Get-MissingPackageIdsFromPartnerCenterError {
     param([Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord)
 
-    $exceptionText = [string]$ErrorRecord.Exception.Message
-    if ([string]::IsNullOrWhiteSpace($exceptionText)) {
-        return @()
+    $errorDetailsMessage = ''
+    if ($null -ne $ErrorRecord.ErrorDetails) {
+        $errorDetailsMessage = [string]$ErrorRecord.ErrorDetails.Message
     }
 
-    $missingPackagesMatch = [regex]::Match($exceptionText, 'missing in your update:\s*(?<ids>[0-9,\s]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-    if (-not $missingPackagesMatch.Success) {
-        return @()
-    }
-
-    return @(
-        $missingPackagesMatch.Groups['ids'].Value.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $candidateTexts = @(
+        [string]$ErrorRecord.Exception.Message,
+        $errorDetailsMessage,
+        [string]$ErrorRecord.ToString()
     )
+
+    foreach ($candidateText in $candidateTexts) {
+        if ([string]::IsNullOrWhiteSpace($candidateText)) {
+            continue
+        }
+
+        $missingPackagesMatch = [regex]::Match($candidateText, 'missing in your update:\s*(?<ids>[0-9,\s]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if (-not $missingPackagesMatch.Success) {
+            continue
+        }
+
+        return @(
+            $missingPackagesMatch.Groups['ids'].Value.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+    }
+
+    return @()
 }
 
 function New-PackageUploadArchive {
