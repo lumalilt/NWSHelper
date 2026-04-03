@@ -223,7 +223,7 @@ jobs:
 
               if ($runningPrerequisiteWorkflows.Count -gt 0) {
                 $runningWorkflowList = $runningPrerequisiteWorkflows -join ', '
-                Write-Host "Skipping release for ${releaseTag}: prerequisite workflow(s) still running for SHA $sourceSha: $runningWorkflowList."
+                Write-Host "Skipping release for ${releaseTag}: prerequisite workflow(s) still running for SHA ${sourceSha}: $runningWorkflowList."
               }
               elseif (-not $ciSucceeded -or -not $compatibilitySucceeded) {
                 Write-Host "Skipping release for ${releaseTag}: required successful public-ci and public-core-compatibility for SHA $sourceSha are not available yet."

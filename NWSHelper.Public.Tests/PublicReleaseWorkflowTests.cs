@@ -108,7 +108,7 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("$runningPrerequisiteWorkflows = @()", workflow, StringComparison.Ordinal);
         Assert.Contains("$runningPrerequisiteWorkflows += 'public-ci'", workflow, StringComparison.Ordinal);
         Assert.Contains("$runningPrerequisiteWorkflows += 'public-core-compatibility'", workflow, StringComparison.Ordinal);
-        Assert.Contains("prerequisite workflow(s) still running for SHA $sourceSha: $runningWorkflowList.", workflow, StringComparison.Ordinal);
+        Assert.Contains("prerequisite workflow(s) still running for SHA ${sourceSha}: $runningWorkflowList.", workflow, StringComparison.Ordinal);
         Assert.Contains("- public-ci", workflowRunSection, StringComparison.Ordinal);
         Assert.Contains("- public-core-compatibility", workflowRunSection, StringComparison.Ordinal);
         Assert.Contains("- completed", workflowRunSection, StringComparison.Ordinal);
