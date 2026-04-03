@@ -232,6 +232,35 @@ public class SubmitPartnerCenterFlightScriptTests
         }
     }
 
+    [Fact]
+    public void SubmitPartnerCenterFlightScript_FlightSubmit_RetriesUsingPackageIdFromWebExceptionResponseBody()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
+        var packagePath = Path.Combine(root, "NWSHelper-1.2.3.0.msix");
+        var evidencePath = Path.Combine(root, "evidence", "partner-center-submission.json");
+
+        Directory.CreateDirectory(root);
+        WriteTestMsix(packagePath, identityName: "NWSHelper.NWSHelper", publisher: "CN=NWS Helper", version: "1.2.3.0");
+
+        try
+        {
+            var output = RunPowerShellBootstrap(BuildPartnerCenterWebExceptionRetryBootstrap(packagePath, evidencePath));
+
+            Assert.Equal("SubmissionCommitted", output["Status"]);
+            Assert.Equal("test-flight", output["FlightId"]);
+            Assert.Equal("submission-6", output["SubmissionId"]);
+            Assert.Equal("PreProcessing", output["SubmissionStatus"]);
+            Assert.Contains("Retrying with the server-reported package id preserved.", output["__rawStdout"], StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     private static void WriteTestMsix(string packagePath, string identityName, string publisher, string version)
     {
         using var stream = File.Create(packagePath);
@@ -855,6 +884,183 @@ function Start-Sleep {
   -StatusPollIntervalSeconds 1 `
   -CommitStatusTimeoutMinutes 1 `
   -ForceReplacePendingSubmission
+""";
+    }
+
+    private static string BuildPartnerCenterWebExceptionRetryBootstrap(string packagePath, string evidencePath)
+    {
+        var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+
+        return $$"""
+$global:SubmissionGetCount = 0
+$global:UpdatePutCount = 0
+$listenerReservation = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+$listenerReservation.Start()
+$listenerPort = $listenerReservation.LocalEndpoint.Port
+$listenerReservation.Stop()
+$global:errorListenerPrefix = "http://127.0.0.1:$listenerPort/"
+$global:errorPayload = '{ "code": "InvalidParameterValue", "message": "Please keep all file entries for existing packages. If you wish to remove a package, mark it as PendingDelete. The following packages are missing in your update: 2000000000093982100", "target": "packages" }'
+$global:errorListenerJob = $null
+
+function Start-PartnerCenterErrorListener {
+    param(
+        [string]$Prefix,
+        [string]$Payload
+    )
+
+    return Start-Job -ScriptBlock {
+        param($ListenerPrefix, $ListenerPayload)
+
+        $listener = [System.Net.HttpListener]::new()
+        $listener.Prefixes.Add($ListenerPrefix)
+        $listener.Start()
+
+        try {
+            $context = $listener.GetContext()
+            $response = $context.Response
+            $response.StatusCode = 400
+            $response.ContentType = 'application/json'
+            $payloadBytes = [System.Text.Encoding]::UTF8.GetBytes($ListenerPayload)
+            $response.OutputStream.Write($payloadBytes, 0, $payloadBytes.Length)
+            $response.OutputStream.Close()
+            $response.Close()
+        }
+        finally {
+            $listener.Stop()
+            $listener.Close()
+        }
+    } -ArgumentList $Prefix, $Payload
+}
+
+function Invoke-RestMethod {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [string]$ContentType,
+        $Body
+    )
+
+    if ($Uri -like 'https://login.microsoftonline.com/*/oauth2/token') {
+        return [pscustomobject]@{ access_token = 'test-token' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight') {
+        return [pscustomobject]@{
+            lastPublishedFlightSubmission = [pscustomobject]@{ id = 'published-6' }
+        }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions') {
+        return [pscustomobject]@{ id = 'submission-6' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-6') {
+        $global:SubmissionGetCount++
+
+        if ($global:SubmissionGetCount -eq 1) {
+            return [pscustomobject]@{
+                id = 'submission-6'
+                fileUploadUrl = 'https://example.invalid/upload'
+                flightPackages = @()
+                targetPublishMode = 'Immediate'
+                targetPublishDate = $null
+                notesForCertification = ''
+                status = 'PendingCommit'
+                statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+            }
+        }
+
+        return [pscustomobject]@{
+            id = 'submission-6'
+            status = 'PreProcessing'
+            statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+        }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/published-6') {
+        return [pscustomobject]@{
+            id = 'published-6'
+            flightPackages = @(
+                [pscustomobject]@{
+                    fileName = 'NWSHelper-1.0.31.0.msix'
+                    fileStatus = 'Uploaded'
+                    minimumDirectXVersion = 'None'
+                    minimumSystemRam = 'None'
+                }
+            )
+        }
+    }
+
+    if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-6') {
+        $global:UpdatePutCount++
+        $request = $Body | ConvertFrom-Json
+        $package = $request.flightPackages[0]
+        $packageId = if ($package.PSObject.Properties.Name -contains 'id') { [string]$package.id } else { '' }
+
+        if ($global:UpdatePutCount -eq 1) {
+            if (-not [string]::IsNullOrWhiteSpace($packageId)) {
+                throw 'Expected first update payload to lack a package id.'
+            }
+
+            $global:errorListenerJob = Start-PartnerCenterErrorListener -Prefix $global:errorListenerPrefix -Payload $global:errorPayload
+            Microsoft.PowerShell.Utility\Invoke-RestMethod -Method Put -Uri $global:errorListenerPrefix -ContentType 'application/json' -Body '{"probe":true}'
+        }
+
+        if ($packageId -ne '2000000000093982100') {
+            throw 'Expected retry payload to preserve the package id reported by the web exception response body.'
+        }
+
+        return [pscustomobject]@{ id = 'submission-6' }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-6/commit') {
+        return [pscustomobject]@{ status = 'CommitStarted' }
+    }
+
+    throw "Unexpected Invoke-RestMethod call: $Method $Uri"
+}
+
+function Invoke-WebRequest {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [string]$InFile,
+        [string]$ContentType,
+        [hashtable]$Headers
+    )
+
+    return [pscustomobject]@{ StatusCode = 201 }
+}
+
+function Start-Sleep {
+    param([int]$Seconds)
+}
+
+try {
+    & {{ToPowerShellLiteral(scriptPath)}} `
+      -SubmissionTarget Flight `
+      -ApplicationId public-store-app `
+      -FlightId test-flight `
+      -PackagePath {{ToPowerShellLiteral(packagePath)}} `
+      -TenantId tenant-id `
+      -ClientId client-id `
+      -ClientSecret client-secret `
+      -ExpectedPackageIdentityName NWSHelper.NWSHelper `
+      -ExpectedPackagePublisher 'CN=NWS Helper' `
+      -TargetPublishMode Immediate `
+      -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
+      -StatusPollIntervalSeconds 1 `
+      -CommitStatusTimeoutMinutes 1 `
+      -ForceReplacePendingSubmission
+}
+finally {
+    if ($null -ne $global:errorListenerJob) {
+        Wait-Job $global:errorListenerJob | Out-Null
+        Receive-Job $global:errorListenerJob | Out-Null
+        Remove-Job $global:errorListenerJob
+    }
+}
 """;
     }
 

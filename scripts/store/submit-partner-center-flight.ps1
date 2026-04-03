@@ -225,12 +225,54 @@ function Get-PartnerCenterPackageEntries {
 function Get-MissingPackageIdsFromPartnerCenterError {
     param([Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord)
 
+    $responseBodyText = ''
+    try {
+        $response = Get-OptionalObjectPropertyValue -InputObject $ErrorRecord.Exception -PropertyName 'Response'
+        if ($null -ne $response) {
+            $content = Get-OptionalObjectPropertyValue -InputObject $response -PropertyName 'Content'
+            if ($null -ne $content) {
+                $readAsStringAsyncMethod = $content.PSObject.Methods['ReadAsStringAsync']
+                if ($null -ne $readAsStringAsyncMethod) {
+                    $readTask = $content.ReadAsStringAsync()
+                    if ($null -ne $readTask) {
+                        $responseBodyText = [string]$readTask.GetAwaiter().GetResult()
+                    }
+                }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($responseBodyText)) {
+                $getResponseStreamMethod = $response.PSObject.Methods['GetResponseStream']
+                if ($null -ne $getResponseStreamMethod) {
+                    $responseStream = $response.GetResponseStream()
+                    if ($null -ne $responseStream) {
+                        try {
+                            $streamReader = [System.IO.StreamReader]::new($responseStream)
+                            try {
+                                $responseBodyText = $streamReader.ReadToEnd()
+                            }
+                            finally {
+                                $streamReader.Dispose()
+                            }
+                        }
+                        finally {
+                            $responseStream.Dispose()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    catch {
+        $responseBodyText = ''
+    }
+
     $errorDetailsMessage = ''
     if ($null -ne $ErrorRecord.ErrorDetails) {
         $errorDetailsMessage = [string]$ErrorRecord.ErrorDetails.Message
     }
 
     $candidateTexts = @(
+        $responseBodyText,
         [string]$ErrorRecord.Exception.Message,
         $errorDetailsMessage,
         [string]$ErrorRecord.ToString()
