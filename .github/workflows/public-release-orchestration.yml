@@ -38,6 +38,7 @@ on:
   workflow_run:
     workflows:
       - public-ci
+      - public-core-compatibility
     types:
       - completed
   push:
@@ -202,6 +203,15 @@ jobs:
               $compatibilitySucceeded = Test-HasSuccessfulRun $compatibilityRuns
               $compatibilityRunning = Test-HasRunningRun $compatibilityRuns
               $compatibilityFailed = Test-HasFailedRun $compatibilityRuns
+              $runningPrerequisiteWorkflows = @()
+
+              if ($ciRunning) {
+                $runningPrerequisiteWorkflows += 'public-ci'
+              }
+
+              if ($compatibilityRunning) {
+                $runningPrerequisiteWorkflows += 'public-core-compatibility'
+              }
 
               if ($ciFailed -and -not $ciSucceeded) {
                 throw "public-ci failed for SHA $sourceSha."
@@ -211,8 +221,9 @@ jobs:
                 throw "public-core-compatibility failed for SHA $sourceSha."
               }
 
-              if ($ciRunning -or $compatibilityRunning) {
-                Write-Host "Skipping release for ${releaseTag}: public-ci is still running for SHA $sourceSha."
+              if ($runningPrerequisiteWorkflows.Count -gt 0) {
+                $runningWorkflowList = $runningPrerequisiteWorkflows -join ', '
+                Write-Host "Skipping release for ${releaseTag}: prerequisite workflow(s) still running for SHA $sourceSha: $runningWorkflowList."
               }
               elseif (-not $ciSucceeded -or -not $compatibilitySucceeded) {
                 Write-Host "Skipping release for ${releaseTag}: required successful public-ci and public-core-compatibility for SHA $sourceSha are not available yet."

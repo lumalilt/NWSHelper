@@ -222,6 +222,26 @@ function Get-PartnerCenterPackageEntries {
     return ,@($packageEntries)
 }
 
+function Get-MissingPackageIdsFromPartnerCenterError {
+    param([Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $exceptionText = [string]$ErrorRecord.Exception.Message
+    if ([string]::IsNullOrWhiteSpace($exceptionText)) {
+        return @()
+    }
+
+    $missingPackagesMatch = [regex]::Match($exceptionText, 'missing in your update:\s*(?<ids>[0-9,\s]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $missingPackagesMatch.Success) {
+        return @()
+    }
+
+    return @(
+        $missingPackagesMatch.Groups['ids'].Value.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+}
+
 function New-PackageUploadArchive {
     param(
         [Parameter(Mandatory = $true)][string]$SourcePackagePath,
@@ -486,7 +506,43 @@ switch ($TargetPublishMode) {
     }
 }
 
-$updatedSubmission = Invoke-PartnerCenterRequest -Method Put -Uri $submissionUri -AccessToken $token -Body $submission
+try {
+    $updatedSubmission = Invoke-PartnerCenterRequest -Method Put -Uri $submissionUri -AccessToken $token -Body $submission
+}
+catch {
+    $missingPackageIds = @(Get-MissingPackageIdsFromPartnerCenterError -ErrorRecord $_)
+    if ($missingPackageIds.Count -ne 1) {
+        throw
+    }
+
+    $currentPackageEntry = @($submission.$packageCollectionPropertyName)[0]
+    $currentPackageId = [string](Get-OptionalObjectPropertyValue -InputObject $currentPackageEntry -PropertyName 'id')
+    $missingPackageId = $missingPackageIds[0]
+    if ([string]::Equals($currentPackageId, $missingPackageId, [System.StringComparison]::Ordinal)) {
+        throw
+    }
+
+    $retryPackageSeed = if ($null -ne $replacementPackage) {
+        [pscustomobject]@{
+            id = $missingPackageId
+            minimumDirectXVersion = [string](Get-OptionalObjectPropertyValue -InputObject $replacementPackage -PropertyName 'minimumDirectXVersion')
+            minimumSystemRam = [string](Get-OptionalObjectPropertyValue -InputObject $replacementPackage -PropertyName 'minimumSystemRam')
+        }
+    }
+    else {
+        [pscustomobject]@{
+            id = $missingPackageId
+            minimumDirectXVersion = 'None'
+            minimumSystemRam = 'None'
+        }
+    }
+
+    Write-Host "Partner Center update rejected the payload because package id $missingPackageId was missing. Retrying with the server-reported package id preserved."
+    $submission.$packageCollectionPropertyName = @(
+        New-PartnerCenterPackageEntry -FileName ([System.IO.Path]::GetFileName($resolvedPackagePath)) -FileStatus 'PendingUpload' -ExistingPackage $retryPackageSeed
+    )
+    $updatedSubmission = Invoke-PartnerCenterRequest -Method Put -Uri $submissionUri -AccessToken $token -Body $submission
+}
 
 $commitUri = "$submissionUri/commit"
 Invoke-PartnerCenterRequest -Method Post -Uri $commitUri -AccessToken $token -Body @{} | Out-Null

@@ -94,6 +94,26 @@ public class PublicReleaseWorkflowTests
         Assert.Contains("else {", workflow, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PublicReleaseWorkflow_TriggersOnCompletedPrerequisiteWorkflows_AndReportsRunningPrerequisites()
+    {
+        var workflowPath = Path.Combine(GetRepositoryRoot(), ".github", "workflows", "public-release-orchestration.yml");
+        Assert.True(File.Exists(workflowPath), $"Expected workflow at {workflowPath}");
+
+        var workflow = File.ReadAllText(workflowPath);
+        var normalizedWorkflow = workflow.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var workflowRunSection = GetSection(normalizedWorkflow, "  workflow_run:\n", "  push:\n");
+
+        Assert.Contains("workflow_run:\n    workflows:\n      - public-ci\n      - public-core-compatibility\n    types:\n      - completed", normalizedWorkflow, StringComparison.Ordinal);
+        Assert.Contains("$runningPrerequisiteWorkflows = @()", workflow, StringComparison.Ordinal);
+        Assert.Contains("$runningPrerequisiteWorkflows += 'public-ci'", workflow, StringComparison.Ordinal);
+        Assert.Contains("$runningPrerequisiteWorkflows += 'public-core-compatibility'", workflow, StringComparison.Ordinal);
+        Assert.Contains("prerequisite workflow(s) still running for SHA $sourceSha: $runningWorkflowList.", workflow, StringComparison.Ordinal);
+        Assert.Contains("- public-ci", workflowRunSection, StringComparison.Ordinal);
+        Assert.Contains("- public-core-compatibility", workflowRunSection, StringComparison.Ordinal);
+        Assert.Contains("- completed", workflowRunSection, StringComparison.Ordinal);
+    }
+
     private static string GetRepositoryRoot()
     {
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
