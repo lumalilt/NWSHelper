@@ -318,7 +318,7 @@ function Get-MissingPackageIdsFromPartnerCenterError {
             continue
         }
 
-        $missingPackagesMatch = [regex]::Match($candidateText, 'missing in your update:\s*(?<ids>[0-9,\s]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $missingPackagesMatch = [regex]::Match($candidateText, 'missing\s+in\s+your\s+update:\s*(?<ids>[0-9,\s]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
         if (-not $missingPackagesMatch.Success) {
             continue
         }
