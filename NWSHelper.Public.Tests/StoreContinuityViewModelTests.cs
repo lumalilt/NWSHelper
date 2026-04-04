@@ -76,6 +76,166 @@ public class StoreContinuityViewModelTests
     }
 
     [Fact]
+    public async Task BuildPreview_WhenStoreOwnershipVerifiedLocally_UsesUnlimitedEntitlementWithoutClaim()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "nwshelper-store-local-unlock", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            var boundaryPath = Path.Combine(tempDirectory, "Territories.csv");
+            File.WriteAllText(boundaryPath, "placeholder");
+
+            var extractionOrchestrator = new CapturingExtractionOrchestrator();
+            var viewModel = CreateViewModel(
+                extractionOrchestrator: extractionOrchestrator,
+                accountLinkService: new FakeAccountLinkService { Snapshot = AccountLinkSnapshot.CreateSignedOut() },
+                updateService: new FakeUpdateService { IsStoreInstall = true },
+                storeOwnershipVerifier: FakeStoreOwnershipVerifier.VerifiedOwned());
+
+            viewModel.BoundaryCsvPath = boundaryPath;
+            viewModel.DatasetRootPath = tempDirectory;
+
+            await viewModel.BuildPreviewCommand.ExecuteAsync(null);
+
+            Assert.NotNull(extractionOrchestrator.LastRequest);
+            Assert.NotNull(extractionOrchestrator.LastRequest!.EntitlementContext);
+            Assert.Null(extractionOrchestrator.LastRequest.EntitlementContext!.MaxNewAddressesPerTerritory);
+            Assert.Contains(EntitlementProductCodes.UnlimitedAddressesAddOn, extractionOrchestrator.LastRequest.EntitlementContext.AddOnCodes);
+            Assert.True(viewModel.HasUnlimitedAddressesAddOn);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task StartupPolicy_WhenStoreLinkExistsButEntitlementIsFree_RefreshesLinkedEntitlement()
+    {
+        var accountLinkService = new FakeAccountLinkService
+        {
+            Snapshot = new AccountLinkSnapshot
+            {
+                Status = AccountLinkStateStatus.Linked,
+                AccountId = "acct_store",
+                Email = "store@example.com",
+                PurchaseSource = "store",
+                LinkedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+                LastSyncUtc = DateTimeOffset.UtcNow.AddMinutes(-5)
+            },
+            RefreshStatusResult = new AccountLinkOperationResult
+            {
+                IsSuccess = true,
+                Message = "Account link status refreshed.",
+                Snapshot = new AccountLinkSnapshot
+                {
+                    Status = AccountLinkStateStatus.Linked,
+                    AccountId = "acct_store",
+                    Email = "store@example.com",
+                    PurchaseSource = "store",
+                    LinkedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+                    LastSyncUtc = DateTimeOffset.UtcNow
+                },
+                EntitlementSnapshot = new EntitlementSnapshot
+                {
+                    BasePlanCode = EntitlementProductCodes.FreeBasePlan,
+                    AddOnCodes = [EntitlementProductCodes.UnlimitedAddressesAddOn],
+                    MaxNewAddressesPerTerritory = null,
+                    LastValidatedUtc = DateTimeOffset.UtcNow,
+                    ValidationSource = "Online"
+                }
+            }
+        };
+
+        var viewModel = CreateViewModel(
+            accountLinkService: accountLinkService,
+            updateService: new FakeUpdateService { IsStoreInstall = true });
+
+        await viewModel.RunStartupStoreContinuityPolicyAsync();
+
+        Assert.Equal(1, accountLinkService.RefreshStatusCalls);
+        Assert.True(viewModel.HasUnlimitedAddressesAddOn);
+        Assert.False(viewModel.HasStoreContinuityPrompt);
+        Assert.Equal("Account link status refreshed.", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public void LinkedStoreSnapshot_HidesPromptWithoutEntitlementHydration()
+    {
+        var viewModel = CreateViewModel(
+            accountLinkService: new FakeAccountLinkService
+            {
+                Snapshot = new AccountLinkSnapshot
+                {
+                    Status = AccountLinkStateStatus.Linked,
+                    AccountId = "acct_store",
+                    Email = "store@example.com",
+                    PurchaseSource = "store",
+                    LastSyncUtc = DateTimeOffset.UtcNow
+                }
+            },
+            updateService: new FakeUpdateService { IsStoreInstall = true });
+
+        Assert.False(viewModel.HasStoreContinuityPrompt);
+        Assert.Equal("Linked", viewModel.AccountLinkStatusLabel);
+    }
+
+    [Fact]
+    public async Task StartupPrompt_AfterSuccessfulRestore_ReturnsToSetup()
+    {
+        var accountLinkService = new FakeAccountLinkService
+        {
+            Snapshot = AccountLinkSnapshot.CreateSignedOut(),
+            StartSignInResult = new AccountLinkOperationResult
+            {
+                IsSuccess = true,
+                Message = "Sign-in link requested.",
+                Snapshot = new AccountLinkSnapshot
+                {
+                    Status = AccountLinkStateStatus.SignedIn,
+                    AccountId = "acct_store",
+                    Email = "store@example.com",
+                    LastSyncUtc = DateTimeOffset.UtcNow
+                }
+            },
+            RestoreStorePurchaseResult = new AccountLinkOperationResult
+            {
+                IsSuccess = true,
+                Message = "Store purchase verified and linked.",
+                Snapshot = new AccountLinkSnapshot
+                {
+                    Status = AccountLinkStateStatus.Linked,
+                    AccountId = "acct_store",
+                    Email = "store@example.com",
+                    PurchaseSource = "store",
+                    LinkedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+                    LastSyncUtc = DateTimeOffset.UtcNow
+                }
+            }
+        };
+
+        var viewModel = CreateViewModel(
+            accountLinkService: accountLinkService,
+            updateService: new FakeUpdateService { IsStoreInstall = true });
+
+        await viewModel.RunStartupStoreContinuityPolicyAsync();
+
+        Assert.Equal(WorkflowStage.Settings, viewModel.CurrentStage);
+
+        viewModel.AccountLinkEmail = "store@example.com";
+        await viewModel.StartAccountSignInCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, accountLinkService.RestoreStorePurchaseCalls);
+        Assert.Equal(WorkflowStage.Setup, viewModel.CurrentStage);
+        Assert.False(viewModel.HasStoreContinuityPrompt);
+        Assert.Equal("Store purchase verified and linked.", viewModel.StatusMessage);
+    }
+
+    [Fact]
     public void PendingReviewSession_HidesSignInRequiredStoreHintAndKeepsRestoreAvailable()
     {
         var viewModel = CreateViewModel(
@@ -147,19 +307,23 @@ public class StoreContinuityViewModelTests
     }
 
     private static MainWindowViewModel CreateViewModel(
+        IExtractionOrchestrator? extractionOrchestrator = null,
         IEntitlementService? entitlementService = null,
         IAccountLinkService? accountLinkService = null,
         IUpdateService? updateService = null,
-        ISupportDiagnosticsExportService? supportDiagnosticsExportService = null)
+        ISupportDiagnosticsExportService? supportDiagnosticsExportService = null,
+        IStoreOwnershipVerifier? storeOwnershipVerifier = null)
     {
         return new MainWindowViewModel(
+            extractionOrchestrator: extractionOrchestrator ?? new CapturingExtractionOrchestrator(),
             themeService: new FakeThemeService(),
             setupSettingsService: new FakeSetupSettingsService(),
             entitlementService: entitlementService ?? new FakeEntitlementService(),
             accountLinkService: accountLinkService ?? new FakeAccountLinkService(),
             updateService: updateService ?? new FakeUpdateService(),
             settingsMigrationService: new FakeGuiSettingsMigrationService(),
-            supportDiagnosticsExportService: supportDiagnosticsExportService ?? new FakeSupportDiagnosticsExportService());
+            supportDiagnosticsExportService: supportDiagnosticsExportService ?? new FakeSupportDiagnosticsExportService(),
+            storeOwnershipVerifier: storeOwnershipVerifier ?? FakeStoreOwnershipVerifier.NotOwned());
     }
 
     private static string GetRepositoryRoot()
@@ -174,6 +338,68 @@ public class StoreContinuityViewModelTests
         public void ApplyTheme(AppThemePreference preference)
         {
             CurrentPreference = preference;
+        }
+    }
+
+    private sealed class CapturingExtractionOrchestrator : IExtractionOrchestrator
+    {
+        public ExtractionRequest? LastRequest { get; private set; }
+
+        public Task<ExtractionPreviewData> BuildPreviewAsync(ExtractionRequest request, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastRequest = request;
+            return Task.FromResult(new ExtractionPreviewData
+            {
+                Plan = new TerritoryExtractionPlan(),
+                Result = new ExtractionResult()
+            });
+        }
+
+        public Task<ExtractionExecutionData> ExecuteAsync(ExtractionRequest request, IReadOnlyCollection<string> selectedTerritoryIds, Action<ExtractionProgressSnapshot>? onProgress, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastRequest = request;
+            return Task.FromResult(new ExtractionExecutionData
+            {
+                Result = new ExtractionResult()
+            });
+        }
+    }
+
+    private sealed class FakeStoreOwnershipVerifier : IStoreOwnershipVerifier
+    {
+        private readonly StoreOwnershipVerificationResult result;
+
+        private FakeStoreOwnershipVerifier(StoreOwnershipVerificationResult result)
+        {
+            this.result = result;
+        }
+
+        public static FakeStoreOwnershipVerifier VerifiedOwned()
+        {
+            return new FakeStoreOwnershipVerifier(StoreOwnershipVerificationResult.CreateVerified(
+                new StoreOwnershipEvidence
+                {
+                    ProductKind = StoreOwnedProductKind.DurableAddOn,
+                    ProductStoreId = "9TEST0000001",
+                    InAppOfferToken = "unlimited_addresses",
+                    SkuStoreId = "SKU-0010",
+                    IsOwned = true,
+                    VerificationSource = "windows-store-license"
+                },
+                "owned"));
+        }
+
+        public static FakeStoreOwnershipVerifier NotOwned()
+        {
+            return new FakeStoreOwnershipVerifier(StoreOwnershipVerificationResult.CreateFallback("not owned"));
+        }
+
+        public Task<StoreOwnershipVerificationResult> VerifyAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(result);
         }
     }
 
@@ -252,6 +478,8 @@ public class StoreContinuityViewModelTests
 
         public int RestoreStorePurchaseCalls { get; private set; }
 
+        public int RefreshStatusCalls { get; private set; }
+
         public AccountLinkSnapshot GetSnapshot() => Snapshot;
 
         public Task<AccountLinkOperationResult> SaveSnapshotAsync(AccountLinkSnapshot snapshot, CancellationToken cancellationToken)
@@ -278,6 +506,7 @@ public class StoreContinuityViewModelTests
         public Task<AccountLinkOperationResult> RefreshStatusAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            RefreshStatusCalls++;
             Snapshot = RefreshStatusResult.Snapshot;
             return Task.FromResult(RefreshStatusResult);
         }

@@ -12,6 +12,16 @@ namespace NWSHelper.Tests;
 public class SubmitPartnerCenterFlightScriptTests
 {
     [Fact]
+    public void SubmitPartnerCenterFlightScript_UploadUsesBasicParsing()
+    {
+        var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+        var content = File.ReadAllText(scriptPath);
+
+        Assert.Contains("Invoke-WebRequest -Method Put", content, StringComparison.Ordinal);
+        Assert.Contains("-UseBasicParsing", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SubmitPartnerCenterFlightScript_ValidateOnlyProduction_WritesEvidenceAndOutputsIdentity()
     {
         var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
@@ -149,6 +159,34 @@ public class SubmitPartnerCenterFlightScriptTests
     }
 
     [Fact]
+    public void SubmitPartnerCenterFlightScript_FlightSubmit_CanMarkSupersededPackagePendingDelete()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
+        var packagePath = Path.Combine(root, "NWSHelper-1.2.3.0.msix");
+        var evidencePath = Path.Combine(root, "evidence", "partner-center-submission.json");
+
+        Directory.CreateDirectory(root);
+        WriteTestMsix(packagePath, identityName: "NWSHelper.NWSHelper", publisher: "CN=NWS Helper", version: "1.2.3.0");
+
+        try
+        {
+            var output = RunPowerShellBootstrap(BuildExistingPackageReplacementBootstrap(packagePath, evidencePath, markSupersededPackagesPendingDelete: true));
+
+            Assert.Equal("SubmissionCommitted", output["Status"]);
+            Assert.Equal("true", output["WillMarkSupersededPackagesPendingDelete"]);
+            Assert.Equal("submission-2", output["SubmissionId"]);
+            Assert.Equal("PreProcessing", output["SubmissionStatus"]);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void SubmitPartnerCenterFlightScript_FlightSubmit_FallsBackToPublishedSubmissionPackages()
     {
         var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
@@ -192,6 +230,34 @@ public class SubmitPartnerCenterFlightScriptTests
 
             Assert.Equal("SubmissionCommitted", output["Status"]);
             Assert.Equal("test-flight", output["FlightId"]);
+            Assert.Equal("submission-4", output["SubmissionId"]);
+            Assert.Equal("PreProcessing", output["SubmissionStatus"]);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void SubmitPartnerCenterFlightScript_FlightSubmit_RetryWithPendingDeleteModePreservesExistingPackageId()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
+        var packagePath = Path.Combine(root, "NWSHelper-1.2.3.0.msix");
+        var evidencePath = Path.Combine(root, "evidence", "partner-center-submission.json");
+
+        Directory.CreateDirectory(root);
+        WriteTestMsix(packagePath, identityName: "NWSHelper.NWSHelper", publisher: "CN=NWS Helper", version: "1.2.3.0");
+
+        try
+        {
+            var output = RunPowerShellBootstrap(BuildPartnerCenterErrorRetryBootstrap(packagePath, evidencePath, markSupersededPackagesPendingDelete: true));
+
+            Assert.Equal("SubmissionCommitted", output["Status"]);
+            Assert.Equal("true", output["WillMarkSupersededPackagesPendingDelete"]);
             Assert.Equal("submission-4", output["SubmissionId"]);
             Assert.Equal("PreProcessing", output["SubmissionStatus"]);
         }
@@ -278,6 +344,34 @@ public class SubmitPartnerCenterFlightScriptTests
             Assert.Equal("SubmissionCommitted", output["Status"]);
             Assert.Equal("test-flight", output["FlightId"]);
             Assert.Equal("submission-7", output["SubmissionId"]);
+            Assert.Equal("PreProcessing", output["SubmissionStatus"]);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void SubmitPartnerCenterFlightScript_FlightSubmit_RetriesUsingPackageIdFromPowerShellFormattedPartnerCenterError()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
+        var packagePath = Path.Combine(root, "NWSHelper-1.2.3.0.msix");
+        var evidencePath = Path.Combine(root, "evidence", "partner-center-submission.json");
+
+        Directory.CreateDirectory(root);
+        WriteTestMsix(packagePath, identityName: "NWSHelper.NWSHelper", publisher: "CN=NWS Helper", version: "1.2.3.0");
+
+        try
+        {
+            var output = RunPowerShellBootstrap(BuildPowerShellFormattedPartnerCenterErrorRetryBootstrap(packagePath, evidencePath));
+
+            Assert.Equal("SubmissionCommitted", output["Status"]);
+            Assert.Equal("test-flight", output["FlightId"]);
+            Assert.Equal("submission-8", output["SubmissionId"]);
             Assert.Equal("PreProcessing", output["SubmissionStatus"]);
         }
         finally
@@ -416,9 +510,11 @@ function Start-Sleep {
 """;
     }
 
-    private static string BuildExistingPackageReplacementBootstrap(string packagePath, string evidencePath)
+    private static string BuildExistingPackageReplacementBootstrap(string packagePath, string evidencePath, bool markSupersededPackagesPendingDelete = false)
     {
         var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+        var expectedExistingPackageStatus = markSupersededPackagesPendingDelete ? "PendingDelete" : "Uploaded";
+        var pruneArgument = markSupersededPackagesPendingDelete ? "  -MarkSupersededPackagesPendingDelete `\r\n" : string.Empty;
 
         return $$"""
 $global:SubmissionGetCount = 0
@@ -479,17 +575,19 @@ function Invoke-RestMethod {
 
     if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-2') {
         $request = $Body | ConvertFrom-Json
-        if ($request.flightPackages.Count -ne 1) {
-            throw 'Expected exactly one flight package in update payload.'
+        if ($request.flightPackages.Count -ne 2) {
+            throw 'Expected existing uploaded package plus new pending-upload package in update payload.'
         }
 
-        $package = $request.flightPackages[0]
-        if ($package.id -ne '2000000000093982100') {
-            throw '{ "code": "InvalidParameterValue", "message": "Please keep all file entries for existing packages. If you wish to remove a package, mark it as PendingDelete. The following packages are missing in your update: 2000000000093982100", "target": "packages" }'
+        $existingPackage = @($request.flightPackages | Where-Object { ($_.PSObject.Properties.Name -contains 'id') -and [string]$_.id -eq '2000000000093982100' }) | Select-Object -First 1
+        if ($null -eq $existingPackage -or $existingPackage.fileName -ne 'NWSHelper-1.0.28.msix' -or $existingPackage.fileStatus -ne '{{expectedExistingPackageStatus}}') {
+            throw 'Expected existing uploaded package entry to be preserved in update payload.'
         }
 
-        if ($package.fileName -ne 'NWSHelper-1.2.3.0.msix' -or $package.fileStatus -ne 'PendingUpload') {
-            throw 'Expected replacement package entry with PendingUpload status.'
+        $pendingUploadPackage = @($request.flightPackages | Where-Object { ($_.PSObject.Properties.Name -contains 'fileStatus') -and [string]$_.fileStatus -eq 'PendingUpload' }) | Select-Object -First 1
+        $pendingUploadPackageId = if (($null -ne $pendingUploadPackage) -and ($pendingUploadPackage.PSObject.Properties.Name -contains 'id')) { [string]$pendingUploadPackage.id } else { '' }
+        if ($null -eq $pendingUploadPackage -or -not [string]::IsNullOrWhiteSpace($pendingUploadPackageId) -or $pendingUploadPackage.fileName -ne 'NWSHelper-1.2.3.0.msix') {
+            throw 'Expected appended pending-upload package entry for the new MSIX.'
         }
 
         return [pscustomobject]@{ id = 'submission-2' }
@@ -532,7 +630,7 @@ function Start-Sleep {
   -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
   -StatusPollIntervalSeconds 1 `
   -CommitStatusTimeoutMinutes 1 `
-  -ForceReplacePendingSubmission
+{{pruneArgument}}  -ForceReplacePendingSubmission
 """;
     }
 
@@ -656,9 +754,11 @@ function Start-Sleep {
 """;
     }
 
-    private static string BuildPartnerCenterErrorRetryBootstrap(string packagePath, string evidencePath)
+    private static string BuildPartnerCenterErrorRetryBootstrap(string packagePath, string evidencePath, bool markSupersededPackagesPendingDelete = false)
     {
         var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+        var expectedExistingPackageStatus = markSupersededPackagesPendingDelete ? "PendingDelete" : "Uploaded";
+        var pruneArgument = markSupersededPackagesPendingDelete ? "  -MarkSupersededPackagesPendingDelete `\r\n" : string.Empty;
 
         return $$"""
 $global:SubmissionGetCount = 0
@@ -727,19 +827,45 @@ function Invoke-RestMethod {
     if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-4') {
         $global:UpdatePutCount++
         $request = $Body | ConvertFrom-Json
-        $package = $request.flightPackages[0]
-        $packageId = if ($package.PSObject.Properties.Name -contains 'id') { [string]$package.id } else { '' }
+        if ($request.flightPackages.Count -ne 2) {
+            throw 'Expected existing package plus new pending-upload package in update payload.'
+        }
+
+        $existingPackage = @($request.flightPackages | Where-Object { [string]$_.fileName -eq 'NWSHelper-1.0.30.0.msix' }) | Select-Object -First 1
+        if ($null -eq $existingPackage) {
+            throw 'Expected existing package entry in update payload.'
+        }
+
+        $existingPackageId = if ($existingPackage.PSObject.Properties.Name -contains 'id') { [string]$existingPackage.id } else { '' }
+        $pendingUploadPackage = @($request.flightPackages | Where-Object { ($_.PSObject.Properties.Name -contains 'fileStatus') -and [string]$_.fileStatus -eq 'PendingUpload' }) | Select-Object -First 1
+        $pendingUploadPackageId = if (($null -ne $pendingUploadPackage) -and ($pendingUploadPackage.PSObject.Properties.Name -contains 'id')) { [string]$pendingUploadPackage.id } else { '' }
 
         if ($global:UpdatePutCount -eq 1) {
-            if (-not [string]::IsNullOrWhiteSpace($packageId)) {
+            if (-not [string]::IsNullOrWhiteSpace($existingPackageId)) {
                 throw 'Expected first update payload to lack a package id.'
+            }
+
+            if ($existingPackage.fileStatus -ne '{{expectedExistingPackageStatus}}') {
+                throw 'Expected existing package to use the requested retained or pending-delete status on first update.'
+            }
+
+            if ($null -eq $pendingUploadPackage -or -not [string]::IsNullOrWhiteSpace($pendingUploadPackageId) -or $pendingUploadPackage.fileName -ne 'NWSHelper-1.2.3.0.msix') {
+                throw 'Expected appended pending-upload package entry for the new MSIX on first update.'
             }
 
             throw '{ "code": "InvalidParameterValue", "message": "Please keep all file entries for existing packages. If you wish to remove a package, mark it as PendingDelete. The following packages are missing in your update: 2000000000093982100", "target": "packages" }'
         }
 
-        if ($packageId -ne '2000000000093982100') {
+        if ($existingPackageId -ne '2000000000093982100') {
             throw 'Expected retry payload to preserve the package id reported by Partner Center.'
+        }
+
+        if ($existingPackage.fileStatus -ne '{{expectedExistingPackageStatus}}') {
+            throw 'Expected retry payload to preserve the requested retained or pending-delete status for the existing package.'
+        }
+
+        if ($null -eq $pendingUploadPackage -or -not [string]::IsNullOrWhiteSpace($pendingUploadPackageId) -or $pendingUploadPackage.fileName -ne 'NWSHelper-1.2.3.0.msix') {
+            throw 'Expected retry payload to keep the appended pending-upload package entry for the new MSIX.'
         }
 
         return [pscustomobject]@{ id = 'submission-4' }
@@ -782,7 +908,7 @@ function Start-Sleep {
   -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
   -StatusPollIntervalSeconds 1 `
   -CommitStatusTimeoutMinutes 1 `
-  -ForceReplacePendingSubmission
+{{pruneArgument}}  -ForceReplacePendingSubmission
 """;
     }
 
@@ -1149,6 +1275,141 @@ update: 2000000000093982100", "target": "packages" }
     }
 
     if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-7/commit') {
+        return [pscustomobject]@{ status = 'CommitStarted' }
+    }
+
+    throw "Unexpected Invoke-RestMethod call: $Method $Uri"
+}
+
+function Invoke-WebRequest {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [string]$InFile,
+        [string]$ContentType,
+        [hashtable]$Headers
+    )
+
+    return [pscustomobject]@{ StatusCode = 201 }
+}
+
+function Start-Sleep {
+    param([int]$Seconds)
+}
+
+& {{ToPowerShellLiteral(scriptPath)}} `
+  -SubmissionTarget Flight `
+  -ApplicationId public-store-app `
+  -FlightId test-flight `
+  -PackagePath {{ToPowerShellLiteral(packagePath)}} `
+  -TenantId tenant-id `
+  -ClientId client-id `
+  -ClientSecret client-secret `
+  -ExpectedPackageIdentityName NWSHelper.NWSHelper `
+  -ExpectedPackagePublisher 'CN=NWS Helper' `
+  -TargetPublishMode Immediate `
+  -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
+  -StatusPollIntervalSeconds 1 `
+  -CommitStatusTimeoutMinutes 1 `
+  -ForceReplacePendingSubmission
+""";
+    }
+
+    private static string BuildPowerShellFormattedPartnerCenterErrorRetryBootstrap(string packagePath, string evidencePath)
+    {
+        var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+
+        return $$"""
+$global:SubmissionGetCount = 0
+$global:UpdatePutCount = 0
+
+function Invoke-RestMethod {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [string]$ContentType,
+        $Body
+    )
+
+    if ($Uri -like 'https://login.microsoftonline.com/*/oauth2/token') {
+        return [pscustomobject]@{ access_token = 'test-token' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight') {
+        return [pscustomobject]@{
+            lastPublishedFlightSubmission = [pscustomobject]@{ id = 'published-8' }
+        }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions') {
+        return [pscustomobject]@{ id = 'submission-8' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-8') {
+        $global:SubmissionGetCount++
+
+        if ($global:SubmissionGetCount -eq 1) {
+            return [pscustomobject]@{
+                id = 'submission-8'
+                fileUploadUrl = 'https://example.invalid/upload'
+                flightPackages = @()
+                targetPublishMode = 'Immediate'
+                targetPublishDate = $null
+                notesForCertification = ''
+                status = 'PendingCommit'
+                statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+            }
+        }
+
+        return [pscustomobject]@{
+            id = 'submission-8'
+            status = 'PreProcessing'
+            statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+        }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/published-8') {
+        return [pscustomobject]@{
+            id = 'published-8'
+            flightPackages = @(
+                [pscustomobject]@{
+                    fileName = 'NWSHelper-1.0.31.0.msix'
+                    fileStatus = 'Uploaded'
+                    minimumDirectXVersion = 'None'
+                    minimumSystemRam = 'None'
+                }
+            )
+        }
+    }
+
+    if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-8') {
+        $global:UpdatePutCount++
+        $request = $Body | ConvertFrom-Json
+        $package = $request.flightPackages[0]
+        $packageId = if ($package.PSObject.Properties.Name -contains 'id') { [string]$package.id } else { '' }
+
+        if ($global:UpdatePutCount -eq 1) {
+            $exception = [System.Exception]::new('The remote server returned an error: (400) Bad Request.')
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($exception, 'InvalidParameterValue', [System.Management.Automation.ErrorCategory]::InvalidData, $null)
+            $formattedMessage = @'
+     | { "code": "InvalidParameterValue",   "message": "Please keep all file entries
+     | for existing packages. If you wish to remove a package, mark it as PendingDelete. The following packages are
+     | missing in your 
+     | update: 2000000000093982100",   "target": "packages" }
+'@
+            $errorRecord.ErrorDetails = [System.Management.Automation.ErrorDetails]::new($formattedMessage)
+            throw $errorRecord
+        }
+
+        if ($packageId -ne '2000000000093982100') {
+            throw 'Expected retry payload to preserve the package id reported by PowerShell-formatted Partner Center error text.'
+        }
+
+        return [pscustomobject]@{ id = 'submission-8' }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-8/commit') {
         return [pscustomobject]@{ status = 'CommitStarted' }
     }
 

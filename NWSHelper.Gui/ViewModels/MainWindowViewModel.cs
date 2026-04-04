@@ -30,6 +30,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly IStoreAddOnCatalogService storeAddOnCatalogService;
     private readonly IAccountLinkService accountLinkService;
     private readonly IUpdateService updateService;
+    private readonly IStoreOwnershipVerifier storeOwnershipVerifier;
     private IReadOnlyList<DatasetCatalogItem> availableDatasets = [];
     private CancellationTokenSource? activeRunCancellation;
     private TerritoryExtractionPlan? lastPreviewPlan;
@@ -393,7 +394,8 @@ public partial class MainWindowViewModel : ViewModelBase
         IUpdateService? updateService = null,
         IGuiSettingsMigrationService? settingsMigrationService = null,
         IStoreAddOnCatalogService? storeAddOnCatalogService = null,
-        ISupportDiagnosticsExportService? supportDiagnosticsExportService = null)
+        ISupportDiagnosticsExportService? supportDiagnosticsExportService = null,
+        IStoreOwnershipVerifier? storeOwnershipVerifier = null)
     {
         var storeRuntimeContextProvider = new StoreRuntimeContextProvider();
         this.extractionOrchestrator = extractionOrchestrator ?? new ExtractionOrchestrator();
@@ -407,6 +409,7 @@ public partial class MainWindowViewModel : ViewModelBase
         this.storeAddOnCatalogService = storeAddOnCatalogService ?? StoreAddOnCatalogServiceFactory.CreateDefault();
         this.accountLinkService = accountLinkService ?? new AccountLinkService(storeRuntimeContextProvider: storeRuntimeContextProvider);
         this.updateService = updateService ?? new NetSparkleUpdateService(storeRuntimeContextProvider: storeRuntimeContextProvider);
+        this.storeOwnershipVerifier = storeOwnershipVerifier ?? StoreOwnershipVerifierFactory.CreateDefault();
 
         DatasetProviders = this.datasetDownloadService.GetProviders();
 
@@ -990,6 +993,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 return;
             }
 
+            await TryApplyLocalStoreOwnershipEntitlementAsync(CancellationToken.None);
+
             if (CanRestoreStorePurchase)
             {
                 await RestoreStorePurchaseCoreAsync(CancellationToken.None);
@@ -1018,6 +1023,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var snapshot = await entitlementService.RefreshAsync(CancellationToken.None, forceOnlineRevalidation: true);
             ApplyEntitlementSnapshot(snapshot);
+            await TryApplyLocalStoreOwnershipEntitlementAsync(CancellationToken.None);
             StatusMessage = "Entitlement status refreshed.";
         }
         catch (Exception ex)
@@ -1106,9 +1112,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            var result = await accountLinkService.RefreshStatusAsync(CancellationToken.None);
-            ApplyAccountLinkOperationResult(result);
-            await TryAutoRestoreStorePurchaseAsync(result.Snapshot, CancellationToken.None);
+            await RefreshAccountLinkStatusCoreAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
@@ -1171,6 +1175,8 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        await TryApplyLocalStoreOwnershipEntitlementAsync(CancellationToken.None);
+
         if (ShouldPromptForStoreContinuityLink(activeAccountLinkSnapshot))
         {
             if (CurrentStage != WorkflowStage.Settings)
@@ -1182,6 +1188,23 @@ public partial class MainWindowViewModel : ViewModelBase
             RequestStoreContinuityAttention();
             LastError = null;
             StatusMessage = "Store install detected. Link an email now to preserve later direct-download access.";
+            return;
+        }
+
+        if (ShouldRefreshLinkedStoreEntitlement(activeAccountLinkSnapshot))
+        {
+            IsAccountLinkBusy = true;
+            LastError = null;
+
+            try
+            {
+                await RefreshAccountLinkStatusCoreAsync(CancellationToken.None);
+            }
+            finally
+            {
+                IsAccountLinkBusy = false;
+            }
+
             return;
         }
 
@@ -1412,6 +1435,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            await TryApplyLocalStoreOwnershipEntitlementAsync(CancellationToken.None);
+
             if (!TryValidateSetupInputs(out var validationError))
             {
                 LastError = validationError;
@@ -2370,6 +2395,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             LastError = null;
             StatusMessage = result.Message;
+            ReturnFromStartupStoreContinuityPromptIfResolved(result.Snapshot);
             return;
         }
 
@@ -2443,9 +2469,23 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool HasVerifiedStoreContinuity(AccountLinkSnapshot snapshot)
     {
         return IsStoreInstall
-            && activeEntitlementSnapshot.HasUnlimitedAddressesAddOn
             && snapshot.Status == AccountLinkStateStatus.Linked
             && string.Equals(snapshot.PurchaseSource, "store", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ReturnFromStartupStoreContinuityPromptIfResolved(AccountLinkSnapshot snapshot)
+    {
+        if (CurrentStage != WorkflowStage.Settings || settingsReturnStage != WorkflowStage.Setup)
+        {
+            return;
+        }
+
+        if (!HasVerifiedStoreContinuity(snapshot))
+        {
+            return;
+        }
+
+        CurrentStage = WorkflowStage.Setup;
     }
 
     private bool ShouldPromptForStoreContinuityLink(AccountLinkSnapshot snapshot)
@@ -2461,6 +2501,14 @@ public partial class MainWindowViewModel : ViewModelBase
             && !HasVerifiedStoreContinuity(snapshot)
             && snapshot.HasActiveSession
             && !string.Equals(snapshot.PurchaseSource, "store", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ShouldRefreshLinkedStoreEntitlement(AccountLinkSnapshot snapshot)
+    {
+        return IsStoreInstall
+            && snapshot.Status == AccountLinkStateStatus.Linked
+            && string.Equals(snapshot.PurchaseSource, "store", StringComparison.OrdinalIgnoreCase)
+            && !activeEntitlementSnapshot.HasUnlimitedAddressesAddOn;
     }
 
     private void RequestStoreContinuityAttention()
@@ -2518,6 +2566,58 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var result = await accountLinkService.RestoreStorePurchaseAsync(cancellationToken);
         ApplyAccountLinkOperationResult(result);
+    }
+
+    private async Task RefreshAccountLinkStatusCoreAsync(CancellationToken cancellationToken)
+    {
+        var result = await accountLinkService.RefreshStatusAsync(cancellationToken);
+        ApplyAccountLinkOperationResult(result);
+        await TryAutoRestoreStorePurchaseAsync(result.Snapshot, cancellationToken);
+    }
+
+    private async Task<bool> TryApplyLocalStoreOwnershipEntitlementAsync(CancellationToken cancellationToken)
+    {
+        if (!IsStoreInstall || activeEntitlementSnapshot.HasUnlimitedAddressesAddOn)
+        {
+            return false;
+        }
+
+        try
+        {
+            var verification = await storeOwnershipVerifier.VerifyAsync(cancellationToken);
+            if (!verification.IsVerified || !verification.IsOwned || verification.IsTrial || verification.Evidence is null)
+            {
+                return false;
+            }
+
+            ApplyEntitlementSnapshot(CreateLocalStoreOwnershipEntitlementSnapshot(verification.Evidence));
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private EntitlementSnapshot CreateLocalStoreOwnershipEntitlementSnapshot(StoreOwnershipEvidence evidence)
+    {
+        var addOnCodes = activeEntitlementSnapshot.AddOnCodes
+            .Concat([EntitlementProductCodes.UnlimitedAddressesAddOn])
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return new EntitlementSnapshot
+        {
+            BasePlanCode = string.IsNullOrWhiteSpace(activeEntitlementSnapshot.BasePlanCode)
+                ? EntitlementProductCodes.FreeBasePlan
+                : activeEntitlementSnapshot.BasePlanCode,
+            AddOnCodes = addOnCodes,
+            MaxNewAddressesPerTerritory = null,
+            ExpiresUtc = evidence.ExpirationDateUtc,
+            LastValidatedUtc = DateTimeOffset.UtcNow,
+            ValidationSource = "MicrosoftStoreLocalOwnership"
+        };
     }
 
     private static string FormatPurchaseSource(string purchaseSource)

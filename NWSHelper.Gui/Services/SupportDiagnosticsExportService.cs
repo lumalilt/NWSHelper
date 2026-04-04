@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -90,6 +91,10 @@ public sealed class SupportDiagnosticsExportService : ISupportDiagnosticsExportS
             var storeRuntimeContext = storeRuntimeContextProvider.GetCurrent();
             var storeOwnershipOptions = storeOwnershipOptionsAccessor();
             var ownershipVerification = await storeOwnershipVerifier.VerifyAsync(cancellationToken);
+            var effectiveStoreRuntimeContext = ownershipVerification is { IsVerified: true, Evidence: not null }
+                ? storeRuntimeContext.WithVerifiedOwnership(ownershipVerification.Evidence)
+                : storeRuntimeContext;
+            var proofEnvelope = effectiveStoreRuntimeContext.CreateProofEnvelope();
 
             var document = new
             {
@@ -182,23 +187,16 @@ public sealed class SupportDiagnosticsExportService : ISupportDiagnosticsExportS
                 },
                 storeRuntime = new
                 {
-                    storeRuntimeContext.IsPackaged,
-                    storeRuntimeContext.IsStoreInstall,
-                    proofAuthority = storeRuntimeContext.ProofAuthority.ToString(),
-                    storeRuntimeContext.DetectionSource,
-                    storeRuntimeContext.PackageFamilyName,
-                    storeRuntimeContext.ProcessPath,
-                    storeRuntimeContext.CapturedAtUtc,
-                    proofEnvelope = storeRuntimeContext.CreateProofEnvelope()
+                    effectiveStoreRuntimeContext.IsPackaged,
+                    effectiveStoreRuntimeContext.IsStoreInstall,
+                    proofAuthority = effectiveStoreRuntimeContext.ProofAuthority.ToString(),
+                    effectiveStoreRuntimeContext.DetectionSource,
+                    effectiveStoreRuntimeContext.PackageFamilyName,
+                    effectiveStoreRuntimeContext.ProcessPath,
+                    effectiveStoreRuntimeContext.CapturedAtUtc,
+                    proofEnvelope = CreateSanitizedProofEnvelope(proofEnvelope)
                 },
-                storeOwnershipConfiguration = new
-                {
-                    productKind = storeOwnershipOptions.ProductKind.ToString(),
-                    storeOwnershipOptions.IsProductKindConfigured,
-                    storeOwnershipOptions.ProductStoreId,
-                    storeOwnershipOptions.InAppOfferToken,
-                    storeOwnershipOptions.HasDurableIdentifier
-                },
+                storeOwnershipConfiguration = CreateSanitizedStoreOwnershipConfiguration(storeOwnershipOptions),
                 storeOwnershipVerification = new
                 {
                     ownershipVerification.IsVerified,
@@ -206,19 +204,7 @@ public sealed class SupportDiagnosticsExportService : ISupportDiagnosticsExportS
                     ownershipVerification.IsTrial,
                     ownershipVerification.AllowHeuristicFallback,
                     ownershipVerification.Message,
-                    evidence = ownershipVerification.Evidence is null
-                        ? null
-                        : new
-                        {
-                            productKind = ownershipVerification.Evidence.ProductKind.ToString(),
-                            ownershipVerification.Evidence.ProductStoreId,
-                            ownershipVerification.Evidence.InAppOfferToken,
-                            ownershipVerification.Evidence.SkuStoreId,
-                            ownershipVerification.Evidence.IsOwned,
-                            ownershipVerification.Evidence.IsTrial,
-                            ownershipVerification.Evidence.ExpirationDateUtc,
-                            ownershipVerification.Evidence.VerificationSource
-                        }
+                    evidence = CreateSanitizedStoreOwnershipEvidence(ownershipVerification.Evidence)
                 }
             };
 
@@ -227,7 +213,7 @@ public sealed class SupportDiagnosticsExportService : ISupportDiagnosticsExportS
             return new SupportDiagnosticsExportResult
             {
                 IsSuccess = true,
-                Message = "Support diagnostics exported. Secrets and entitlement tokens were excluded from the report."
+                Message = "Support diagnostics exported. Secrets, entitlement tokens, and replayable Store proof payloads were excluded from the report."
             };
         }
         catch (Exception ex)
@@ -241,6 +227,61 @@ public sealed class SupportDiagnosticsExportService : ISupportDiagnosticsExportS
         var tempPath = path + ".tmp";
         File.WriteAllText(tempPath, JsonSerializer.Serialize(value, SerializerOptions));
         File.Move(tempPath, path, overwrite: true);
+    }
+
+    private static object? CreateSanitizedProofEnvelope(StoreProofEnvelope? proofEnvelope)
+    {
+        if (proofEnvelope is null)
+        {
+            return null;
+        }
+
+        return new
+        {
+            proofEnvelope.SchemaVersion,
+            proofEnvelope.Authority,
+            proofEnvelope.Provider,
+            proofEnvelope.CapturedAtUtc,
+            proofEnvelope.Summary,
+            Artifacts = proofEnvelope.Artifacts.Select(artifact => new
+            {
+                artifact.Kind,
+                artifact.ContentType,
+                artifact.Encoding
+            })
+        };
+    }
+
+    private static object CreateSanitizedStoreOwnershipConfiguration(StoreOwnershipOptions options)
+    {
+        return new
+        {
+            productKind = options.ProductKind.ToString(),
+            options.IsProductKindConfigured,
+            productStoreIdPresent = !string.IsNullOrWhiteSpace(options.ProductStoreId),
+            inAppOfferTokenPresent = !string.IsNullOrWhiteSpace(options.InAppOfferToken),
+            options.HasDurableIdentifier
+        };
+    }
+
+    private static object? CreateSanitizedStoreOwnershipEvidence(StoreOwnershipEvidence? evidence)
+    {
+        if (evidence is null)
+        {
+            return null;
+        }
+
+        return new
+        {
+            productKind = evidence.ProductKind.ToString(),
+            productStoreIdPresent = !string.IsNullOrWhiteSpace(evidence.ProductStoreId),
+            inAppOfferTokenPresent = !string.IsNullOrWhiteSpace(evidence.InAppOfferToken),
+            skuStoreIdPresent = !string.IsNullOrWhiteSpace(evidence.SkuStoreId),
+            evidence.IsOwned,
+            evidence.IsTrial,
+            evidence.ExpirationDateUtc,
+            evidence.VerificationSource
+        };
     }
 
     private static SupportDiagnosticsExportResult CreateFailureResult(string message)

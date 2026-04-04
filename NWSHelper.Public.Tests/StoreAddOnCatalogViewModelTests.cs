@@ -114,6 +114,47 @@ public class StoreAddOnCatalogViewModelTests
     }
 
     [Fact]
+    public async Task PurchaseStoreAddOn_WithoutLinkedSession_UnlocksLocallyFromVerifiedStoreOwnership()
+    {
+        var catalogService = new FakeStoreAddOnCatalogService
+        {
+            CatalogResult = StoreAddOnCatalogResult.CreateAvailable(
+            [
+                new StoreAddOnOffer
+                {
+                    StoreId = "9TEST0000001",
+                    InAppOfferToken = "unlimited_addresses",
+                    Title = "Unlimited Addresses",
+                    Description = "Remove the new-address cap.",
+                    PriceText = "$19.99",
+                    IsOwned = false
+                }
+            ],
+            "1 Microsoft Store add-on is available for this install."),
+            PurchaseResult = StoreAddOnPurchaseResult.CreateSuccess("Purchased Unlimited Addresses from Microsoft Store.")
+        };
+
+        var accountLinkService = new FakeAccountLinkService
+        {
+            Snapshot = AccountLinkSnapshot.CreateSignedOut()
+        };
+
+        var viewModel = CreateViewModel(
+            accountLinkService: accountLinkService,
+            updateService: new FakeUpdateService { IsStoreInstall = true },
+            storeAddOnCatalogService: catalogService,
+            storeOwnershipVerifier: FakeStoreOwnershipVerifier.VerifiedOwned());
+
+        await viewModel.RefreshStoreAddOnCatalogCommand.ExecuteAsync(null);
+        await viewModel.PurchaseStoreAddOnCommand.ExecuteAsync(viewModel.StoreAddOnOffers[0]);
+
+        Assert.Equal(1, catalogService.PurchaseCalls);
+        Assert.Equal(0, accountLinkService.RestoreStorePurchaseCalls);
+        Assert.True(viewModel.HasUnlimitedAddressesAddOn);
+        Assert.Contains("Link an email", viewModel.AccountLinkStatusMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void PublicGuiMarkup_ContainsStoreAddOnCatalogBindings()
     {
         var settingsMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "SettingsStageView.axaml"));
@@ -132,7 +173,8 @@ public class StoreAddOnCatalogViewModelTests
         IEntitlementService? entitlementService = null,
         IAccountLinkService? accountLinkService = null,
         IUpdateService? updateService = null,
-        IStoreAddOnCatalogService? storeAddOnCatalogService = null)
+        IStoreAddOnCatalogService? storeAddOnCatalogService = null,
+        IStoreOwnershipVerifier? storeOwnershipVerifier = null)
     {
         return new MainWindowViewModel(
             themeService: new FakeThemeService(),
@@ -142,7 +184,8 @@ public class StoreAddOnCatalogViewModelTests
             updateService: updateService ?? new FakeUpdateService(),
             settingsMigrationService: new FakeGuiSettingsMigrationService(),
             storeAddOnCatalogService: storeAddOnCatalogService ?? new FakeStoreAddOnCatalogService(),
-            supportDiagnosticsExportService: new FakeSupportDiagnosticsExportService());
+            supportDiagnosticsExportService: new FakeSupportDiagnosticsExportService(),
+            storeOwnershipVerifier: storeOwnershipVerifier ?? FakeStoreOwnershipVerifier.NotOwned());
     }
 
     private static string GetRepositoryRoot()
@@ -157,6 +200,42 @@ public class StoreAddOnCatalogViewModelTests
         public void ApplyTheme(AppThemePreference preference)
         {
             CurrentPreference = preference;
+        }
+    }
+
+    private sealed class FakeStoreOwnershipVerifier : IStoreOwnershipVerifier
+    {
+        private readonly StoreOwnershipVerificationResult result;
+
+        private FakeStoreOwnershipVerifier(StoreOwnershipVerificationResult result)
+        {
+            this.result = result;
+        }
+
+        public static FakeStoreOwnershipVerifier VerifiedOwned()
+        {
+            return new FakeStoreOwnershipVerifier(StoreOwnershipVerificationResult.CreateVerified(
+                new StoreOwnershipEvidence
+                {
+                    ProductKind = StoreOwnedProductKind.DurableAddOn,
+                    ProductStoreId = "9TEST0000001",
+                    InAppOfferToken = "unlimited_addresses",
+                    SkuStoreId = "SKU-0010",
+                    IsOwned = true,
+                    VerificationSource = "windows-store-license"
+                },
+                "owned"));
+        }
+
+        public static FakeStoreOwnershipVerifier NotOwned()
+        {
+            return new FakeStoreOwnershipVerifier(StoreOwnershipVerificationResult.CreateFallback("not owned"));
+        }
+
+        public Task<StoreOwnershipVerificationResult> VerifyAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(result);
         }
     }
 

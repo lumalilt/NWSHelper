@@ -30,6 +30,8 @@ param(
 
     [switch]$ForceReplacePendingSubmission,
 
+    [switch]$MarkSupersededPackagesPendingDelete,
+
     [int]$StatusPollIntervalSeconds = 15,
 
     [int]$CommitStatusTimeoutMinutes = 10,
@@ -273,6 +275,99 @@ function New-PartnerCenterPackageEntry {
     return [pscustomobject]$packageEntry
 }
 
+function Get-PartnerCenterExistingPackageFileStatus {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()][object]$ExistingPackage,
+        [switch]$MarkSupersededPackagesPendingDelete
+    )
+
+    if ($MarkSupersededPackagesPendingDelete.IsPresent) {
+        return 'PendingDelete'
+    }
+
+    $existingFileStatus = [string](Get-OptionalObjectPropertyValue -InputObject $ExistingPackage -PropertyName 'fileStatus')
+    if (-not [string]::IsNullOrWhiteSpace($existingFileStatus)) {
+        return $existingFileStatus
+    }
+
+    return 'Uploaded'
+}
+
+function New-PartnerCenterExistingPackageSeed {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()][object]$ExistingPackage,
+        [string]$PackageIdOverride
+    )
+
+    if ($null -eq $ExistingPackage -and [string]::IsNullOrWhiteSpace($PackageIdOverride)) {
+        return $null
+    }
+
+    $packageSeed = [ordered]@{}
+
+    $existingPackageId = [string](Get-OptionalObjectPropertyValue -InputObject $ExistingPackage -PropertyName 'id')
+    if (-not [string]::IsNullOrWhiteSpace($PackageIdOverride)) {
+        $packageSeed.id = $PackageIdOverride
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($existingPackageId)) {
+        $packageSeed.id = $existingPackageId
+    }
+
+    $existingMinimumDirectXVersion = [string](Get-OptionalObjectPropertyValue -InputObject $ExistingPackage -PropertyName 'minimumDirectXVersion')
+    if (-not [string]::IsNullOrWhiteSpace($existingMinimumDirectXVersion)) {
+        $packageSeed.minimumDirectXVersion = $existingMinimumDirectXVersion
+    }
+
+    $existingMinimumSystemRam = [string](Get-OptionalObjectPropertyValue -InputObject $ExistingPackage -PropertyName 'minimumSystemRam')
+    if (-not [string]::IsNullOrWhiteSpace($existingMinimumSystemRam)) {
+        $packageSeed.minimumSystemRam = $existingMinimumSystemRam
+    }
+
+    return [pscustomobject]$packageSeed
+}
+
+function New-PartnerCenterUpdatedPackageEntries {
+    param(
+        [Parameter(Mandatory = $true)][string]$NewPackageFileName,
+        [AllowNull()][object[]]$ExistingPackages,
+        [switch]$MarkSupersededPackagesPendingDelete,
+        [string]$RetryMissingPackageId
+    )
+
+    $updatedPackageEntries = @()
+    $missingPackageIdApplied = $false
+
+    foreach ($existingPackage in @($ExistingPackages)) {
+        if ($null -eq $existingPackage) {
+            continue
+        }
+
+        $existingPackageId = [string](Get-OptionalObjectPropertyValue -InputObject $existingPackage -PropertyName 'id')
+        $packageIdOverride = ''
+        if (-not $missingPackageIdApplied -and -not [string]::IsNullOrWhiteSpace($RetryMissingPackageId) -and [string]::IsNullOrWhiteSpace($existingPackageId)) {
+            $packageIdOverride = $RetryMissingPackageId
+            $missingPackageIdApplied = $true
+        }
+
+        $existingFileName = [string](Get-OptionalObjectPropertyValue -InputObject $existingPackage -PropertyName 'fileName')
+        if ([string]::IsNullOrWhiteSpace($existingFileName)) {
+            throw 'Partner Center existing package entry did not provide a fileName.'
+        }
+
+        $updatedPackageEntries += New-PartnerCenterPackageEntry `
+            -FileName $existingFileName `
+            -FileStatus (Get-PartnerCenterExistingPackageFileStatus -ExistingPackage $existingPackage -MarkSupersededPackagesPendingDelete:$MarkSupersededPackagesPendingDelete.IsPresent) `
+            -ExistingPackage (New-PartnerCenterExistingPackageSeed -ExistingPackage $existingPackage -PackageIdOverride $packageIdOverride)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($RetryMissingPackageId) -and -not $missingPackageIdApplied -and @($ExistingPackages).Count -gt 0) {
+        throw "Partner Center reported missing package id '$RetryMissingPackageId', but no existing package entry was available to preserve it."
+    }
+
+    $updatedPackageEntries += New-PartnerCenterPackageEntry -FileName $NewPackageFileName -FileStatus 'PendingUpload' -ExistingPackage $null
+    return ,@($updatedPackageEntries)
+}
+
 function Get-PartnerCenterPackageEntries {
     param(
         [AllowNull()][object]$SubmissionObject,
@@ -318,7 +413,8 @@ function Get-MissingPackageIdsFromPartnerCenterError {
             continue
         }
 
-        $missingPackagesMatch = [regex]::Match($candidateText, 'missing\s+in\s+your\s+update:\s*(?<ids>[0-9,\s]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $normalizedCandidateText = [regex]::Replace($candidateText, '\r?\n\s*\|\s*', ' ')
+        $missingPackagesMatch = [regex]::Match($normalizedCandidateText, 'missing\s+in\s+your\s+update:\s*(?<ids>[0-9,\s]+)', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
         if (-not $missingPackagesMatch.Success) {
             continue
         }
@@ -365,7 +461,7 @@ function Upload-PartnerCenterPackage {
         [Parameter(Mandatory = $true)][string]$ArchivePath
     )
 
-    Invoke-WebRequest -Method Put -Uri $UploadUrl -InFile $ArchivePath -ContentType 'application/octet-stream' -Headers @{ 'x-ms-blob-type' = 'BlockBlob' } | Out-Null
+    Invoke-WebRequest -Method Put -Uri $UploadUrl -InFile $ArchivePath -ContentType 'application/octet-stream' -Headers @{ 'x-ms-blob-type' = 'BlockBlob' } -UseBasicParsing | Out-Null
 }
 
 function Test-IsCommitFailureStatus {
@@ -449,6 +545,7 @@ if ($ValidateOnly.IsPresent) {
             packageVersion = $msixIdentity.Version
             targetPublishMode = $TargetPublishMode
             willReplacePendingSubmission = $ForceReplacePendingSubmission.IsPresent
+            willMarkSupersededPackagesPendingDelete = $MarkSupersededPackagesPendingDelete.IsPresent
         }
 
         ($validationEvidenceObject | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $validationEvidencePath -Encoding UTF8
@@ -467,6 +564,7 @@ if ($ValidateOnly.IsPresent) {
     Write-Output "PackageVersion=$($msixIdentity.Version)"
     Write-Output "TargetPublishMode=$TargetPublishMode"
     Write-Output "WillReplacePendingSubmission=$($ForceReplacePendingSubmission.IsPresent.ToString().ToLowerInvariant())"
+    Write-Output "WillMarkSupersededPackagesPendingDelete=$($MarkSupersededPackagesPendingDelete.IsPresent.ToString().ToLowerInvariant())"
     Write-Output "WillWriteEvidence=$((-not [string]::IsNullOrWhiteSpace($EvidenceOutputPath)).ToString().ToLowerInvariant())"
     if (-not [string]::IsNullOrWhiteSpace($validationEvidencePath)) {
         Write-Output "ValidationEvidencePath=$validationEvidencePath"
@@ -569,14 +667,11 @@ if ($existingPackages.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($publis
     $existingPackages = Get-PartnerCenterPackageEntries -SubmissionObject $publishedSubmissionDetails -PackageCollectionPropertyName $packageCollectionPropertyName
 }
 
-if ($existingPackages.Count -gt 1) {
-    throw "Partner Center submission $submissionId contains $($existingPackages.Count) existing package entries. Automated replacement currently supports exactly one package entry."
-}
-
-$replacementPackage = if ($existingPackages.Count -eq 1) { $existingPackages[0] } else { $null }
-$submission.$packageCollectionPropertyName = @(
-    New-PartnerCenterPackageEntry -FileName ([System.IO.Path]::GetFileName($resolvedPackagePath)) -FileStatus 'PendingUpload' -ExistingPackage $replacementPackage
-)
+$newPackageFileName = [System.IO.Path]::GetFileName($resolvedPackagePath)
+$submission.$packageCollectionPropertyName = New-PartnerCenterUpdatedPackageEntries `
+    -NewPackageFileName $newPackageFileName `
+    -ExistingPackages $existingPackages `
+    -MarkSupersededPackagesPendingDelete:$MarkSupersededPackagesPendingDelete.IsPresent
 
 if (-not [string]::IsNullOrWhiteSpace($SubmissionNotes)) {
     $submission.notesForCertification = $SubmissionNotes
@@ -606,32 +701,22 @@ catch {
         throw
     }
 
-    $currentPackageEntry = @($submission.$packageCollectionPropertyName)[0]
-    $currentPackageId = [string](Get-OptionalObjectPropertyValue -InputObject $currentPackageEntry -PropertyName 'id')
     $missingPackageId = $missingPackageIds[0]
-    if ([string]::Equals($currentPackageId, $missingPackageId, [System.StringComparison]::Ordinal)) {
+    $currentPackageIds = @(
+        @($submission.$packageCollectionPropertyName) |
+            ForEach-Object { [string](Get-OptionalObjectPropertyValue -InputObject $_ -PropertyName 'id') } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+    if ($currentPackageIds -contains $missingPackageId) {
         throw
     }
 
-    $retryPackageSeed = if ($null -ne $replacementPackage) {
-        [pscustomobject]@{
-            id = $missingPackageId
-            minimumDirectXVersion = [string](Get-OptionalObjectPropertyValue -InputObject $replacementPackage -PropertyName 'minimumDirectXVersion')
-            minimumSystemRam = [string](Get-OptionalObjectPropertyValue -InputObject $replacementPackage -PropertyName 'minimumSystemRam')
-        }
-    }
-    else {
-        [pscustomobject]@{
-            id = $missingPackageId
-            minimumDirectXVersion = 'None'
-            minimumSystemRam = 'None'
-        }
-    }
-
     Write-Host "Partner Center update rejected the payload because package id $missingPackageId was missing. Retrying with the server-reported package id preserved."
-    $submission.$packageCollectionPropertyName = @(
-        New-PartnerCenterPackageEntry -FileName ([System.IO.Path]::GetFileName($resolvedPackagePath)) -FileStatus 'PendingUpload' -ExistingPackage $retryPackageSeed
-    )
+    $submission.$packageCollectionPropertyName = New-PartnerCenterUpdatedPackageEntries `
+        -NewPackageFileName $newPackageFileName `
+        -ExistingPackages $existingPackages `
+        -MarkSupersededPackagesPendingDelete:$MarkSupersededPackagesPendingDelete.IsPresent `
+        -RetryMissingPackageId $missingPackageId
     $updatedSubmission = Invoke-PartnerCenterRequest -Method Put -Uri $submissionUri -AccessToken $token -Body $submission
 }
 
@@ -681,6 +766,7 @@ if (-not [string]::IsNullOrWhiteSpace($EvidenceOutputPath)) {
         submissionStatus = $finalStatus
         submissionStatusDetails = $finalStatusDetails
         willReplacePendingSubmission = $ForceReplacePendingSubmission.IsPresent
+        willMarkSupersededPackagesPendingDelete = $MarkSupersededPackagesPendingDelete.IsPresent
         committedAtUtc = [DateTime]::UtcNow.ToString('o')
     }
 
@@ -704,6 +790,7 @@ if ($TargetPublishMode -eq 'SpecificDate') {
     Write-Output "TargetPublishDate=$($TargetPublishDate.ToUniversalTime().ToString('o'))"
 }
 Write-Output "WillReplacePendingSubmission=$($ForceReplacePendingSubmission.IsPresent.ToString().ToLowerInvariant())"
+Write-Output "WillMarkSupersededPackagesPendingDelete=$($MarkSupersededPackagesPendingDelete.IsPresent.ToString().ToLowerInvariant())"
 Write-Output "SubmissionStatus=$finalStatus"
 if (-not [string]::IsNullOrWhiteSpace($resolvedEvidenceOutputPath)) {
     Write-Output "EvidenceOutputPath=$resolvedEvidenceOutputPath"
