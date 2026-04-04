@@ -24,8 +24,6 @@ param(
 
     [string]$PackageDescription,
 
-    [string]$LogoSourcePath,
-
     [string]$SetupIconPath,
 
     [string]$IsccPath,
@@ -186,10 +184,6 @@ else {
 
     if (-not [string]::IsNullOrWhiteSpace($PackageDescription)) {
         $msixInvocationParameters.PackageDescription = $PackageDescription
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($LogoSourcePath)) {
-        $msixInvocationParameters.LogoSourcePath = $LogoSourcePath
     }
 
     if (-not [string]::IsNullOrWhiteSpace($MakeAppxPath)) {
