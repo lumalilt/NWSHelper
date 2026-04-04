@@ -10,8 +10,6 @@ param(
 
     [string]$ManifestAssetsPath = (Join-Path $PSScriptRoot 'msix\Assets'),
 
-    [string]$LogoSourcePath,
-
     [string]$OutputDirectory = (Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts') 'msix'),
 
     [string]$PackageIdentityName = '51949LumaLilt.NWSHelper',
@@ -154,77 +152,6 @@ function Resolve-SignToolPath {
     throw 'signtool.exe was not found. Install the Windows 10/11 SDK or pass -SignToolPath <path>.'
 }
 
-function Resolve-LogoSourcePath {
-    param([string]$ExplicitPath)
-
-    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
-        return Resolve-ExistingFile -Path $ExplicitPath -ErrorMessage "Logo source PNG '$ExplicitPath' was not found."
-    }
-
-    $repositoryRoot = Split-Path $PSScriptRoot -Parent
-    $candidatePaths = @(
-        (Join-Path $repositoryRoot 'NWSHelper.Gui\Assets\nwsh_orig.png'),
-        (Join-Path $repositoryRoot 'NWSHelper.Gui\Assets\nwsh.png')
-    )
-
-    foreach ($candidatePath in $candidatePaths) {
-        if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
-            return (Resolve-Path -LiteralPath $candidatePath).Path
-        }
-    }
-
-    throw 'MSIX logo source PNG was not found. Pass -LogoSourcePath <path>.'
-}
-
-function New-MsixLogoAsset {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$SourcePath,
-
-        [Parameter(Mandatory = $true)]
-        [string]$DestinationPath,
-
-        [Parameter(Mandatory = $true)]
-        [int]$Size
-    )
-
-    Add-Type -AssemblyName System.Drawing
-
-    $sourceImage = [System.Drawing.Image]::FromFile($SourcePath)
-    try {
-        $bitmap = New-Object System.Drawing.Bitmap $Size, $Size
-        try {
-            $horizontalResolution = if ($sourceImage.HorizontalResolution -gt 0) { $sourceImage.HorizontalResolution } else { 96 }
-            $verticalResolution = if ($sourceImage.VerticalResolution -gt 0) { $sourceImage.VerticalResolution } else { 96 }
-            $bitmap.SetResolution($horizontalResolution, $verticalResolution)
-
-            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-            try {
-                $graphics.Clear([System.Drawing.Color]::Transparent)
-                $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
-                $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-                $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-                $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-                $graphics.DrawImage($sourceImage, 0, 0, $Size, $Size)
-
-                if (Test-Path -LiteralPath $DestinationPath -PathType Leaf) {
-                    Remove-Item -LiteralPath $DestinationPath -Force
-                }
-
-                $bitmap.Save($DestinationPath, [System.Drawing.Imaging.ImageFormat]::Png)
-            }
-            finally {
-                $graphics.Dispose()
-            }
-        }
-        finally {
-            $bitmap.Dispose()
-        }
-    }
-    finally {
-        $sourceImage.Dispose()
-    }
-}
 
 $resolvedPublishDirectory = Resolve-ExistingDirectory `
     -Path $PublishDirectory `
@@ -243,8 +170,6 @@ $resolvedManifestAssetsPath = Resolve-ExistingDirectory `
     -Path $ManifestAssetsPath `
     -ErrorMessage "MSIX asset directory '$ManifestAssetsPath' does not exist."
 
-$resolvedLogoSourcePath = Resolve-LogoSourcePath -ExplicitPath $LogoSourcePath
-
 $resolvedOutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $resolvedOutputDirectory -Force | Out-Null
 
@@ -258,7 +183,6 @@ if ($ValidateOnly.IsPresent) {
     Write-Output "PublishDirectory=$resolvedPublishDirectory"
     Write-Output "ManifestTemplatePath=$resolvedManifestTemplatePath"
     Write-Output "ManifestAssetsPath=$resolvedManifestAssetsPath"
-    Write-Output "LogoSourcePath=$resolvedLogoSourcePath"
     Write-Output "OutputDirectory=$resolvedOutputDirectory"
     Write-Output "PackageIdentityName=$PackageIdentityName"
     Write-Output "PackageVersion=$msixVersion"
@@ -276,17 +200,6 @@ Copy-Item -Path (Join-Path $resolvedPublishDirectory '*') -Destination $stagingD
 $stagingAssetsDirectory = Join-Path $stagingDirectory 'Assets'
 New-Item -ItemType Directory -Path $stagingAssetsDirectory -Force | Out-Null
 Copy-Item -Path (Join-Path $resolvedManifestAssetsPath '*') -Destination $stagingAssetsDirectory -Recurse -Force
-
-foreach ($logoSpecification in @(
-    @{ Name = 'Square44x44Logo.png'; Size = 44 },
-    @{ Name = 'Square150x150Logo.png'; Size = 150 },
-    @{ Name = 'StoreLogo.png'; Size = 50 }
-)) {
-    New-MsixLogoAsset `
-        -SourcePath $resolvedLogoSourcePath `
-        -DestinationPath (Join-Path $stagingAssetsDirectory $logoSpecification.Name) `
-        -Size $logoSpecification.Size
-}
 
 $manifestTemplate = Get-Content -LiteralPath $resolvedManifestTemplatePath -Raw
 $manifest = $manifestTemplate
@@ -351,5 +264,4 @@ if ($SignPackage.IsPresent) {
 Write-Output 'Mode=Package'
 Write-Output "PackagePath=$packagePath"
 Write-Output "PackageVersion=$msixVersion"
-Write-Output "LogoSourcePath=$resolvedLogoSourcePath"
 Write-Output "PackageSigned=$(([string]$SignPackage.IsPresent).ToLowerInvariant())"
