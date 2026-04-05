@@ -241,6 +241,40 @@ function Get-OptionalObjectPropertyValue {
     return $property.Value
 }
 
+function Get-OptionalObjectPropertyEntries {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()][object]$InputObject,
+        [Parameter(Mandatory = $true)][string]$PropertyName
+    )
+
+    $propertyValue = Get-OptionalObjectPropertyValue -InputObject $InputObject -PropertyName $PropertyName
+    if ($null -eq $propertyValue) {
+        return ,@()
+    }
+
+    return ,@($propertyValue)
+}
+
+function Set-OptionalObjectPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()][object]$InputObject,
+        [Parameter(Mandatory = $true)][string]$PropertyName,
+        [AllowNull()][object]$Value
+    )
+
+    if ($null -eq $InputObject) {
+        throw "Cannot set property '$PropertyName' on a null object."
+    }
+
+    $property = $InputObject.PSObject.Properties[$PropertyName]
+    if ($null -eq $property) {
+        Add-Member -InputObject $InputObject -NotePropertyName $PropertyName -NotePropertyValue $Value
+        return
+    }
+
+    $property.Value = $Value
+}
+
 function New-PartnerCenterPackageEntry {
     param(
         [Parameter(Mandatory = $true)][string]$FileName,
@@ -656,14 +690,32 @@ finally {
     }
 }
 
+$publishedSubmissionDetails = $null
+
+if ($SubmissionTarget -eq 'Production') {
+    $submissionListings = Get-OptionalObjectPropertyEntries -InputObject $submission -PropertyName 'listings'
+    if ($submissionListings.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($publishedSubmissionId)) {
+        $publishedSubmissionUri = "$submissionsUri/$publishedSubmissionId"
+        $publishedSubmissionDetails = Invoke-PartnerCenterRequest -Method Get -Uri $publishedSubmissionUri -AccessToken $token
+        $submissionListings = Get-OptionalObjectPropertyEntries -InputObject $publishedSubmissionDetails -PropertyName 'listings'
+    }
+
+    if ($submissionListings.Count -gt 0) {
+        Set-OptionalObjectPropertyValue -InputObject $submission -PropertyName 'listings' -Value $submissionListings
+    }
+}
+
 $existingPackages = Get-PartnerCenterPackageEntries -SubmissionObject $submission -PackageCollectionPropertyName $packageCollectionPropertyName
 if ($existingPackages.Count -eq 0) {
     $existingPackages = Get-PartnerCenterPackageEntries -SubmissionObject $newSubmission -PackageCollectionPropertyName $packageCollectionPropertyName
 }
 
 if ($existingPackages.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($publishedSubmissionId)) {
-    $publishedSubmissionUri = "$submissionsUri/$publishedSubmissionId"
-    $publishedSubmissionDetails = Invoke-PartnerCenterRequest -Method Get -Uri $publishedSubmissionUri -AccessToken $token
+    if ($null -eq $publishedSubmissionDetails) {
+        $publishedSubmissionUri = "$submissionsUri/$publishedSubmissionId"
+        $publishedSubmissionDetails = Invoke-PartnerCenterRequest -Method Get -Uri $publishedSubmissionUri -AccessToken $token
+    }
+
     $existingPackages = Get-PartnerCenterPackageEntries -SubmissionObject $publishedSubmissionDetails -PackageCollectionPropertyName $packageCollectionPropertyName
 }
 

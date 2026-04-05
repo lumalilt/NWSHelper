@@ -253,6 +253,46 @@ public class SubmitPartnerCenterFlightScriptTests
     }
 
     [Fact]
+    public void SubmitPartnerCenterFlightScript_ProductionSubmit_PreservesListingsFromPublishedSubmission()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
+        var packagePath = Path.Combine(root, "NWSHelper-1.2.3.0.msix");
+        var evidencePath = Path.Combine(root, "evidence", "partner-center-production-submission.json");
+
+        Directory.CreateDirectory(root);
+        WriteTestMsix(packagePath, identityName: "NWSHelper.NWSHelper", publisher: "CN=NWS Helper", version: "1.2.3.0");
+
+        try
+        {
+            var output = RunPowerShellBootstrap(BuildProductionSubmissionListingsBootstrap(packagePath, evidencePath));
+
+            Assert.Equal("SubmissionCommitted", output["Status"]);
+            Assert.Equal("Production", output["SubmissionTarget"]);
+            Assert.Equal("public-store-app", output["ApplicationId"]);
+            Assert.Equal("submission-production-1", output["SubmissionId"]);
+            Assert.Equal("Manual", output["TargetPublishMode"]);
+            Assert.Equal("PreProcessing", output["SubmissionStatus"]);
+
+            Assert.True(File.Exists(evidencePath), $"Expected evidence file at {evidencePath}");
+
+            using var document = JsonDocument.Parse(File.ReadAllText(evidencePath));
+            var rootElement = document.RootElement;
+
+            Assert.Equal("SubmissionCommitted", rootElement.GetProperty("status").GetString());
+            Assert.Equal("Production", rootElement.GetProperty("submissionTarget").GetString());
+            Assert.Equal("submission-production-1", rootElement.GetProperty("submissionId").GetString());
+            Assert.Equal("PreProcessing", rootElement.GetProperty("submissionStatus").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void SubmitPartnerCenterFlightScript_FlightSubmit_RetriesUsingPackageIdFromPartnerCenterError()
     {
         var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
@@ -1076,6 +1116,139 @@ function Start-Sleep {
   -StatusPollIntervalSeconds 1 `
   -CommitStatusTimeoutMinutes 1 `
   -ForceReplacePendingSubmission
+""";
+    }
+
+    private static string BuildProductionSubmissionListingsBootstrap(string packagePath, string evidencePath)
+    {
+        var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+
+        return $$"""
+$global:SubmissionGetCount = 0
+
+function Invoke-RestMethod {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [string]$ContentType,
+        $Body
+    )
+
+    if ($Uri -like 'https://login.microsoftonline.com/*/oauth2/token') {
+        return [pscustomobject]@{ access_token = 'test-token' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app') {
+        return [pscustomobject]@{
+            lastPublishedApplicationSubmission = [pscustomobject]@{ id = 'published-production-1' }
+        }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions') {
+        return [pscustomobject]@{ id = 'submission-production-1' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-1') {
+        $global:SubmissionGetCount++
+
+        if ($global:SubmissionGetCount -eq 1) {
+            return [pscustomobject]@{
+                id = 'submission-production-1'
+                fileUploadUrl = 'https://example.invalid/upload'
+                applicationPackages = @()
+                listings = @()
+                targetPublishMode = 'Manual'
+                targetPublishDate = $null
+                notesForCertification = ''
+                status = 'PendingCommit'
+                statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+            }
+        }
+
+        return [pscustomobject]@{
+            id = 'submission-production-1'
+            status = 'PreProcessing'
+            statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+        }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/published-production-1') {
+        return [pscustomobject]@{
+            id = 'published-production-1'
+            listings = @(
+                [pscustomobject]@{
+                    language = 'en-us'
+                    title = 'NWS Helper'
+                }
+            )
+            applicationPackages = @(
+                [pscustomobject]@{
+                    id = '2000000000093982101'
+                    fileName = 'NWSHelper-1.0.30.0.msix'
+                    fileStatus = 'Uploaded'
+                    minimumDirectXVersion = 'None'
+                    minimumSystemRam = 'None'
+                }
+            )
+        }
+    }
+
+    if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-1') {
+        $request = $Body | ConvertFrom-Json
+
+        if (@($request.listings).Count -ne 1) {
+            throw 'Expected production update payload to preserve published listings.'
+        }
+
+        if (@($request.applicationPackages).Count -ne 2) {
+            throw 'Expected production update payload to include the existing package and the new pending-upload package.'
+        }
+
+        $listing = @($request.listings | Where-Object { [string]$_.language -eq 'en-us' }) | Select-Object -First 1
+        if ($null -eq $listing -or [string]$listing.title -ne 'NWS Helper') {
+            throw 'Expected production update payload to preserve the published listing.'
+        }
+
+        return [pscustomobject]@{ id = 'submission-production-1' }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-1/commit') {
+        return [pscustomobject]@{}
+    }
+
+    throw "Unexpected Invoke-RestMethod call: $Method $Uri"
+}
+
+function Invoke-WebRequest {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [string]$InFile,
+        [string]$ContentType,
+        [hashtable]$Headers
+    )
+
+    return [pscustomobject]@{ StatusCode = 201 }
+}
+
+function Start-Sleep {
+    param([int]$Seconds)
+}
+
+& {{ToPowerShellLiteral(scriptPath)}} `
+  -SubmissionTarget Production `
+  -ApplicationId public-store-app `
+  -PackagePath {{ToPowerShellLiteral(packagePath)}} `
+  -TenantId tenant-id `
+  -ClientId client-id `
+  -ClientSecret client-secret `
+  -ExpectedPackageIdentityName NWSHelper.NWSHelper `
+  -ExpectedPackagePublisher 'CN=NWS Helper' `
+  -TargetPublishMode Manual `
+  -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
+  -StatusPollIntervalSeconds 1 `
+  -CommitStatusTimeoutMinutes 1
 """;
     }
 
