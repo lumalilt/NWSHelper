@@ -473,7 +473,7 @@ function Test-IsCommitFailureStatus {
 function Test-IsCommitAcceptedStatus {
     param([Parameter(Mandatory = $true)][string]$Status)
 
-    return $Status -in @('PreProcessing', 'Certification', 'PendingPublication', 'Publishing', 'Published', 'Release')
+    return $Status -in @('CommitStarted', 'PreProcessing', 'Certification', 'PendingPublication', 'Publishing', 'Published', 'Release')
 }
 
 function Get-StatusDetailsText {

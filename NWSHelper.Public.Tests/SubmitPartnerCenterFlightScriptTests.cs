@@ -131,6 +131,44 @@ public class SubmitPartnerCenterFlightScriptTests
     }
 
     [Fact]
+    public void SubmitPartnerCenterFlightScript_FlightSubmit_TreatsCommitStartedAsAccepted()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
+        var packagePath = Path.Combine(root, "NWSHelper-1.2.3.0.msix");
+        var evidencePath = Path.Combine(root, "evidence", "partner-center-submission.json");
+
+        Directory.CreateDirectory(root);
+        WriteTestMsix(packagePath, identityName: "NWSHelper.NWSHelper", publisher: "CN=NWS Helper", version: "1.2.3.0");
+
+        try
+        {
+            var output = RunPowerShellBootstrap(BuildCommitStartedAcceptedBootstrap(packagePath, evidencePath));
+
+            Assert.Equal("SubmissionCommitted", output["Status"]);
+            Assert.Equal("Flight", output["SubmissionTarget"]);
+            Assert.Equal("test-flight", output["FlightId"]);
+            Assert.Equal("submission-commit-started", output["SubmissionId"]);
+            Assert.Equal("CommitStarted", output["SubmissionStatus"]);
+
+            Assert.True(File.Exists(evidencePath), $"Expected evidence file at {evidencePath}");
+
+            using var document = JsonDocument.Parse(File.ReadAllText(evidencePath));
+            var rootElement = document.RootElement;
+
+            Assert.Equal("SubmissionCommitted", rootElement.GetProperty("status").GetString());
+            Assert.Equal("CommitStarted", rootElement.GetProperty("submissionStatus").GetString());
+            Assert.Equal("submission-commit-started", rootElement.GetProperty("submissionId").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void SubmitPartnerCenterFlightScript_FlightSubmit_PreservesExistingPackageIdDuringUpdate()
     {
         var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
@@ -1275,6 +1313,106 @@ update: 2000000000093982100", "target": "packages" }
     }
 
     if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-7/commit') {
+        return [pscustomobject]@{ status = 'CommitStarted' }
+    }
+
+    throw "Unexpected Invoke-RestMethod call: $Method $Uri"
+}
+
+function Invoke-WebRequest {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [string]$InFile,
+        [string]$ContentType,
+        [hashtable]$Headers
+    )
+
+    return [pscustomobject]@{ StatusCode = 201 }
+}
+
+function Start-Sleep {
+    param([int]$Seconds)
+}
+
+& {{ToPowerShellLiteral(scriptPath)}} `
+  -SubmissionTarget Flight `
+  -ApplicationId public-store-app `
+  -FlightId test-flight `
+  -PackagePath {{ToPowerShellLiteral(packagePath)}} `
+  -TenantId tenant-id `
+  -ClientId client-id `
+  -ClientSecret client-secret `
+  -ExpectedPackageIdentityName NWSHelper.NWSHelper `
+  -ExpectedPackagePublisher 'CN=NWS Helper' `
+  -TargetPublishMode Immediate `
+  -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
+  -StatusPollIntervalSeconds 1 `
+  -CommitStatusTimeoutMinutes 1 `
+  -ForceReplacePendingSubmission
+""";
+    }
+
+    private static string BuildCommitStartedAcceptedBootstrap(string packagePath, string evidencePath)
+    {
+        var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+
+        return $$"""
+function Invoke-RestMethod {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [string]$ContentType,
+        $Body
+    )
+
+    if ($Uri -like 'https://login.microsoftonline.com/*/oauth2/token') {
+        return [pscustomobject]@{ access_token = 'test-token' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight') {
+        return [pscustomobject]@{
+            lastPublishedFlightSubmission = [pscustomobject]@{ id = 'published-commit-started' }
+        }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions') {
+        return [pscustomobject]@{ id = 'submission-commit-started' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-commit-started') {
+        return [pscustomobject]@{
+            id = 'submission-commit-started'
+            fileUploadUrl = 'https://example.invalid/upload'
+            flightPackages = @()
+            targetPublishMode = 'Immediate'
+            targetPublishDate = $null
+            notesForCertification = ''
+            status = 'CommitStarted'
+            statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+        }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/published-commit-started') {
+        return [pscustomobject]@{
+            id = 'published-commit-started'
+            flightPackages = @(
+                [pscustomobject]@{
+                    fileName = 'NWSHelper-1.0.38.0.msix'
+                    fileStatus = 'Uploaded'
+                    minimumDirectXVersion = 'None'
+                    minimumSystemRam = 'None'
+                }
+            )
+        }
+    }
+
+    if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-commit-started') {
+        return [pscustomobject]@{ id = 'submission-commit-started' }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/flights/test-flight/submissions/submission-commit-started/commit') {
         return [pscustomobject]@{ status = 'CommitStarted' }
     }
 
