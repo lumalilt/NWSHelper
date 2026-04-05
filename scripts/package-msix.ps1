@@ -24,6 +24,8 @@ param(
 
     [string]$MakeAppxPath,
 
+    [string]$MakePriPath,
+
     [switch]$SignPackage,
 
     [string]$SignToolPath,
@@ -118,14 +120,42 @@ function Resolve-MakeAppxPath {
 
     $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
     if (Test-Path -LiteralPath $kitsRoot -PathType Container) {
-        $candidates = Get-ChildItem -LiteralPath $kitsRoot -Recurse -File -Filter 'makeappx.exe' -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending
+        $candidates = @(
+            Get-ChildItem -LiteralPath $kitsRoot -Recurse -File -Filter 'makeappx.exe' -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending
+        )
         if ($candidates.Count -gt 0) {
             return $candidates[0].FullName
         }
     }
 
     throw 'makeappx.exe was not found. Install the Windows 10/11 SDK or pass -MakeAppxPath <path>.'
+}
+
+function Resolve-MakePriPath {
+    param([string]$ExplicitPath)
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        return Resolve-ExistingFile -Path $ExplicitPath -ErrorMessage "makepri.exe was not found at '$ExplicitPath'."
+    }
+
+    $command = Get-Command -Name 'makepri.exe' -ErrorAction SilentlyContinue
+    if ($null -ne $command -and (Test-Path -LiteralPath $command.Source -PathType Leaf)) {
+        return (Resolve-Path -LiteralPath $command.Source).Path
+    }
+
+    $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+    if (Test-Path -LiteralPath $kitsRoot -PathType Container) {
+        $candidates = @(
+            Get-ChildItem -LiteralPath $kitsRoot -Recurse -File -Filter 'makepri.exe' -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending
+        )
+        if ($candidates.Count -gt 0) {
+            return $candidates[0].FullName
+        }
+    }
+
+    throw 'makepri.exe was not found. Install the Windows 10/11 SDK or pass -MakePriPath <path>.'
 }
 
 function Resolve-SignToolPath {
@@ -142,8 +172,10 @@ function Resolve-SignToolPath {
 
     $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
     if (Test-Path -LiteralPath $kitsRoot -PathType Container) {
-        $candidates = Get-ChildItem -LiteralPath $kitsRoot -Recurse -File -Filter 'signtool.exe' -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending
+        $candidates = @(
+            Get-ChildItem -LiteralPath $kitsRoot -Recurse -File -Filter 'signtool.exe' -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending
+        )
         if ($candidates.Count -gt 0) {
             return $candidates[0].FullName
         }
@@ -176,6 +208,8 @@ New-Item -ItemType Directory -Path $resolvedOutputDirectory -Force | Out-Null
 $msixVersion = Convert-ToMsixVersion -RawVersion $Version
 $stagingDirectory = Join-Path $resolvedOutputDirectory "staging-$msixVersion"
 $manifestOutputPath = Join-Path $stagingDirectory 'AppxManifest.xml'
+$priConfigPath = Join-Path $stagingDirectory 'priconfig.xml'
+$resourcesPriPath = Join-Path $stagingDirectory 'resources.pri'
 $packagePath = Join-Path $resolvedOutputDirectory "NWSHelper-$msixVersion.msix"
 
 if ($ValidateOnly.IsPresent) {
@@ -212,6 +246,19 @@ $manifest = $manifest.Replace('__DESCRIPTION__', (Escape-XmlValue -Value $Packag
 
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [System.IO.File]::WriteAllText($manifestOutputPath, $manifest, $utf8NoBom)
+
+$resolvedMakePriPath = Resolve-MakePriPath -ExplicitPath $MakePriPath
+& $resolvedMakePriPath createconfig /cf $priConfigPath /dq 'lang-en-US' /pv 10.0.0 /o
+
+if ($LASTEXITCODE -ne 0) {
+    throw "MakePri createconfig failed with exit code $LASTEXITCODE."
+}
+
+& $resolvedMakePriPath new /pr $stagingDirectory /cf $priConfigPath /mn $manifestOutputPath /of $resourcesPriPath /o
+
+if ($LASTEXITCODE -ne 0) {
+    throw "MakePri new failed with exit code $LASTEXITCODE."
+}
 
 if (Test-Path -LiteralPath $packagePath -PathType Leaf) {
     Remove-Item -LiteralPath $packagePath -Force
