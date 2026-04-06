@@ -265,6 +265,7 @@ public class SubmitPartnerCenterFlightScriptTests
         try
         {
             var output = RunPowerShellBootstrap(BuildProductionSubmissionListingsBootstrap(packagePath, evidencePath));
+            var rawStdout = output["__rawStdout"];
 
             Assert.Equal("SubmissionCommitted", output["Status"]);
             Assert.Equal("Production", output["SubmissionTarget"]);
@@ -272,6 +273,18 @@ public class SubmitPartnerCenterFlightScriptTests
             Assert.Equal("submission-production-1", output["SubmissionId"]);
             Assert.Equal("Manual", output["TargetPublishMode"]);
             Assert.Equal("PreProcessing", output["SubmissionStatus"]);
+
+            AssertProgressStageOrder(
+                rawStdout,
+                "ProgressStage=CreateSubmissionRequested",
+                "ProgressStage=CreateSubmissionCompleted",
+                "ProgressStage=PackageUploadStarted",
+                "ProgressStage=PackageUploadCompleted",
+                "ProgressStage=SubmissionUpdateStarted",
+                "ProgressStage=SubmissionUpdateCompleted",
+                "ProgressStage=CommitRequested",
+                "ProgressStage=CommitStatus:PreProcessing",
+                "Status=SubmissionCommitted");
 
             Assert.True(File.Exists(evidencePath), $"Expected evidence file at {evidencePath}");
 
@@ -282,6 +295,34 @@ public class SubmitPartnerCenterFlightScriptTests
             Assert.Equal("Production", rootElement.GetProperty("submissionTarget").GetString());
             Assert.Equal("submission-production-1", rootElement.GetProperty("submissionId").GetString());
             Assert.Equal("PreProcessing", rootElement.GetProperty("submissionStatus").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void SubmitPartnerCenterFlightScript_ProductionSubmit_RetriesTransientGatewayTimeout()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
+        var packagePath = Path.Combine(root, "NWSHelper-1.2.3.0.msix");
+        var evidencePath = Path.Combine(root, "evidence", "partner-center-production-transient-submission.json");
+
+        Directory.CreateDirectory(root);
+        WriteTestMsix(packagePath, identityName: "NWSHelper.NWSHelper", publisher: "CN=NWS Helper", version: "1.2.3.0");
+
+        try
+        {
+            var output = RunPowerShellBootstrap(BuildProductionTransientGatewayTimeoutBootstrap(packagePath, evidencePath));
+
+            Assert.Equal("SubmissionCommitted", output["Status"]);
+            Assert.Equal("Production", output["SubmissionTarget"]);
+            Assert.Equal("submission-production-transient", output["SubmissionId"]);
+            Assert.Equal("PreProcessing", output["SubmissionStatus"]);
         }
         finally
         {
@@ -1176,12 +1217,21 @@ function Invoke-RestMethod {
     if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/published-production-1') {
         return [pscustomobject]@{
             id = 'published-production-1'
-            listings = @(
-                [pscustomobject]@{
-                    language = 'en-us'
-                    title = 'NWS Helper'
+            pricing = [pscustomobject]@{
+                basePrice = 'Free'
+            }
+            listings = [pscustomobject]@{
+                'en-us' = [pscustomobject]@{
+                    baseListing = [pscustomobject]@{
+                        title = 'NWS Helper'
+                    }
                 }
-            )
+                'en' = [pscustomobject]@{
+                    baseListing = [pscustomobject]@{
+                        title = 'NWS Helper'
+                    }
+                }
+            }
             applicationPackages = @(
                 [pscustomobject]@{
                     id = '2000000000093982101'
@@ -1194,26 +1244,242 @@ function Invoke-RestMethod {
         }
     }
 
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions') {
+        $request = $Body | ConvertFrom-Json
+
+        if ($null -eq $request.pricing -or [string]$request.pricing.basePrice -ne 'Free') {
+            throw 'Expected production create payload to preserve published pricing.'
+        }
+
+        if ($request.listings -is [System.Array]) {
+            throw 'Expected production create payload listings to preserve the locale-keyed object shape.'
+        }
+
+        if (@($request.listings.PSObject.Properties.Name).Count -ne 2) {
+            throw 'Expected production create payload to preserve both published locale listings.'
+        }
+
+        if (@($request.applicationPackages).Count -ne 1) {
+            throw 'Expected production create payload to preserve the published application packages.'
+        }
+
+        if ($null -ne $request.PSObject.Properties['gamingOptions']) {
+            throw 'Expected production create payload to omit gamingOptions and let Partner Center clone that state server-side.'
+        }
+
+        return [pscustomobject]@{ id = 'submission-production-1' }
+    }
+
     if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-1') {
         $request = $Body | ConvertFrom-Json
 
-        if (@($request.listings).Count -ne 1) {
-            throw 'Expected production update payload to preserve published listings.'
+        if ($request.listings -is [System.Array]) {
+            throw 'Expected production update payload listings to preserve the locale-keyed object shape.'
+        }
+
+        if (@($request.listings.PSObject.Properties.Name).Count -ne 2) {
+            throw 'Expected production update payload to preserve both published locale listings.'
         }
 
         if (@($request.applicationPackages).Count -ne 2) {
             throw 'Expected production update payload to include the existing package and the new pending-upload package.'
         }
 
-        $listing = @($request.listings | Where-Object { [string]$_.language -eq 'en-us' }) | Select-Object -First 1
-        if ($null -eq $listing -or [string]$listing.title -ne 'NWS Helper') {
-            throw 'Expected production update payload to preserve the published listing.'
+        $listing = $request.listings.'en-us'
+        if ($null -eq $listing -or [string]$listing.baseListing.title -ne 'NWS Helper') {
+            throw 'Expected production update payload to preserve the published en-us listing.'
         }
 
         return [pscustomobject]@{ id = 'submission-production-1' }
     }
 
     if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-1/commit') {
+        return [pscustomobject]@{}
+    }
+
+    throw "Unexpected Invoke-RestMethod call: $Method $Uri"
+}
+
+function Invoke-WebRequest {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [string]$InFile,
+        [string]$ContentType,
+        [hashtable]$Headers
+    )
+
+    return [pscustomobject]@{ StatusCode = 201 }
+}
+
+function Start-Sleep {
+    param([int]$Seconds)
+}
+
+& {{ToPowerShellLiteral(scriptPath)}} `
+  -SubmissionTarget Production `
+  -ApplicationId public-store-app `
+  -PackagePath {{ToPowerShellLiteral(packagePath)}} `
+  -TenantId tenant-id `
+  -ClientId client-id `
+  -ClientSecret client-secret `
+  -ExpectedPackageIdentityName NWSHelper.NWSHelper `
+  -ExpectedPackagePublisher 'CN=NWS Helper' `
+  -TargetPublishMode Manual `
+  -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
+  -StatusPollIntervalSeconds 1 `
+  -CommitStatusTimeoutMinutes 1
+""";
+    }
+
+    private static string BuildProductionTransientGatewayTimeoutBootstrap(string packagePath, string evidencePath)
+    {
+        var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+
+        return $$"""
+$global:SubmissionGetCount = 0
+$global:UpdatePutCount = 0
+
+function Invoke-RestMethod {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [string]$ContentType,
+        $Body
+    )
+
+    if ($Uri -like 'https://login.microsoftonline.com/*/oauth2/token') {
+        return [pscustomobject]@{ access_token = 'test-token' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app') {
+        return [pscustomobject]@{
+            lastPublishedApplicationSubmission = [pscustomobject]@{ id = 'published-production-transient' }
+        }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions') {
+        return [pscustomobject]@{ id = 'submission-production-transient' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-transient') {
+        $global:SubmissionGetCount++
+
+        if ($global:SubmissionGetCount -eq 1) {
+            return [pscustomobject]@{
+                id = 'submission-production-transient'
+                fileUploadUrl = 'https://example.invalid/upload'
+                applicationPackages = @()
+                listings = @()
+                targetPublishMode = 'Manual'
+                targetPublishDate = $null
+                notesForCertification = ''
+                status = 'PendingCommit'
+                statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+            }
+        }
+
+        return [pscustomobject]@{
+            id = 'submission-production-transient'
+            status = 'PreProcessing'
+            statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+        }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/published-production-transient') {
+        return [pscustomobject]@{
+            id = 'published-production-transient'
+            pricing = [pscustomobject]@{
+                basePrice = 'Free'
+            }
+            listings = [pscustomobject]@{
+                'en-us' = [pscustomobject]@{
+                    baseListing = [pscustomobject]@{
+                        title = 'NWS Helper'
+                    }
+                }
+                'en' = [pscustomobject]@{
+                    baseListing = [pscustomobject]@{
+                        title = 'NWS Helper'
+                    }
+                }
+            }
+            applicationPackages = @(
+                [pscustomobject]@{
+                    id = '2000000000093982102'
+                    fileName = 'NWSHelper-1.0.30.0.msix'
+                    fileStatus = 'Uploaded'
+                    minimumDirectXVersion = 'None'
+                    minimumSystemRam = 'None'
+                }
+            )
+        }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions') {
+        $request = $Body | ConvertFrom-Json
+
+        if ($null -eq $request.pricing -or [string]$request.pricing.basePrice -ne 'Free') {
+            throw 'Expected transient production create payload to preserve published pricing.'
+        }
+
+        if ($request.listings -is [System.Array]) {
+            throw 'Expected transient production create payload listings to preserve the locale-keyed object shape.'
+        }
+
+        if (@($request.listings.PSObject.Properties.Name).Count -ne 2) {
+            throw 'Expected transient production create payload to preserve both published locale listings.'
+        }
+
+        if (@($request.applicationPackages).Count -ne 1) {
+            throw 'Expected transient production create payload to preserve the published application packages.'
+        }
+
+        if ($null -ne $request.PSObject.Properties['gamingOptions']) {
+            throw 'Expected transient production create payload to omit gamingOptions and let Partner Center clone that state server-side.'
+        }
+
+        return [pscustomobject]@{ id = 'submission-production-transient' }
+    }
+
+    if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-transient') {
+        $global:UpdatePutCount++
+
+        if ($global:UpdatePutCount -eq 1) {
+            $exception = [System.Exception]::new('The remote server returned an error: (504) Gateway Timeout.')
+            $errorRecord = [System.Management.Automation.ErrorRecord]::new($exception, 'GatewayTimeout', [System.Management.Automation.ErrorCategory]::OperationTimeout, $null)
+            $htmlMessage = @'
+body {
+    font-family: Arial;
+}
+Service unavailable
+504 The service behind this page isn't responding to Azure Front Door.
+Gateway Timeout
+Azure Front Door cannot connect to the origin server at this time.
+Error Info:OriginTimeout
+'@
+            $errorRecord.ErrorDetails = [System.Management.Automation.ErrorDetails]::new($htmlMessage)
+            throw $errorRecord
+        }
+
+        $request = $Body | ConvertFrom-Json
+        if ($request.listings -is [System.Array]) {
+            throw 'Expected retry payload listings to preserve the locale-keyed object shape.'
+        }
+
+        if (@($request.listings.PSObject.Properties.Name).Count -ne 2) {
+            throw 'Expected retry payload to preserve both published locale listings after transient gateway timeout.'
+        }
+
+        if (@($request.applicationPackages).Count -ne 2) {
+            throw 'Expected retry payload to preserve package entries after transient gateway timeout.'
+        }
+
+        return [pscustomobject]@{ id = 'submission-production-transient' }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-transient/commit') {
         return [pscustomobject]@{}
     }
 
@@ -1852,6 +2118,20 @@ function Start-Sleep {
         }
 
         return values;
+    }
+
+    private static void AssertProgressStageOrder(string stdout, params string[] markers)
+    {
+        var nextSearchIndex = 0;
+
+        foreach (var marker in markers)
+        {
+            var markerIndex = stdout.IndexOf(marker, nextSearchIndex, StringComparison.Ordinal);
+            Assert.True(
+                markerIndex >= 0,
+                $"Expected stdout to contain marker '{marker}' after index {nextSearchIndex}.{Environment.NewLine}STDOUT:{Environment.NewLine}{stdout}");
+            nextSearchIndex = markerIndex + marker.Length;
+        }
     }
 
     private static string GetRepositoryRoot()

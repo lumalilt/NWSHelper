@@ -193,6 +193,83 @@ function Get-PartnerCenterErrorResponseBodyText {
     return $responseBodyText
 }
 
+function Get-PartnerCenterErrorStatusCode {
+    param([Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $statusCodeCandidates = @()
+
+    try {
+        $responseProperty = $ErrorRecord.Exception.PSObject.Properties['Response']
+        $response = if ($null -ne $responseProperty) { $responseProperty.Value } else { $null }
+        if ($null -ne $response) {
+            $statusCodeProperty = $response.PSObject.Properties['StatusCode']
+            if ($null -ne $statusCodeProperty -and $null -ne $statusCodeProperty.Value) {
+                $statusCodeCandidates += [string]$statusCodeProperty.Value
+                $valueProperty = $statusCodeProperty.Value.PSObject.Properties['value__']
+                if ($null -ne $valueProperty -and $null -ne $valueProperty.Value) {
+                    $statusCodeCandidates += [string]$valueProperty.Value
+                }
+            }
+        }
+    }
+    catch {
+    }
+
+    if ($null -ne $ErrorRecord.ErrorDetails -and -not [string]::IsNullOrWhiteSpace($ErrorRecord.ErrorDetails.Message)) {
+        $statusCodeCandidates += [string]$ErrorRecord.ErrorDetails.Message
+    }
+
+    $statusCodeCandidates += @(
+        [string]$ErrorRecord.Exception.Message,
+        [string]$ErrorRecord.ToString()
+    )
+
+    foreach ($candidate in $statusCodeCandidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) {
+            continue
+        }
+
+        $match = [regex]::Match($candidate, '(?<!\d)(408|429|500|502|503|504)(?!\d)')
+        if ($match.Success) {
+            return [int]$match.Groups[1].Value
+        }
+    }
+
+    return $null
+}
+
+function Test-IsTransientPartnerCenterError {
+    param(
+        [Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [string]$ResponseBodyText,
+        [string]$ErrorDetailsMessage
+    )
+
+    $statusCode = Get-PartnerCenterErrorStatusCode -ErrorRecord $ErrorRecord
+    if ($null -ne $statusCode -and $statusCode -in @(408, 429, 500, 502, 503, 504)) {
+        return $true
+    }
+
+    $candidateTexts = @(
+        $ResponseBodyText,
+        $ErrorDetailsMessage,
+        [string]$ErrorRecord.Exception.Message,
+        [string]$ErrorRecord.ToString()
+    )
+
+    foreach ($candidateText in $candidateTexts) {
+        if ([string]::IsNullOrWhiteSpace($candidateText)) {
+            continue
+        }
+
+        if ($candidateText -match 'Gateway Timeout|Service unavailable|Azure Front Door|OriginTimeout|temporarily unavailable|timed out') {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Invoke-PartnerCenterRequest {
     param(
         [Parameter(Mandatory = $true)][string]$Method,
@@ -202,24 +279,34 @@ function Invoke-PartnerCenterRequest {
     )
 
     $headers = @{ Authorization = "Bearer $AccessToken" }
-    try {
-        if ($PSBoundParameters.ContainsKey('Body')) {
-            $jsonBody = $Body | ConvertTo-Json -Depth 30
-            return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers -ContentType 'application/json' -Body $jsonBody
-        }
+    $maxAttempts = 3
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        try {
+            if ($PSBoundParameters.ContainsKey('Body')) {
+                $jsonBody = $Body | ConvertTo-Json -Depth 30
+                return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers -ContentType 'application/json' -Body $jsonBody
+            }
 
-        return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers
-    }
-    catch {
-        $responseBodyText = Get-PartnerCenterErrorResponseBodyText -ErrorRecord $_
-        $errorDetailsMessage = if ($null -ne $_.ErrorDetails) { [string]$_.ErrorDetails.Message } else { '' }
-        if ([string]::IsNullOrWhiteSpace($responseBodyText) -or -not [string]::IsNullOrWhiteSpace($errorDetailsMessage)) {
-            throw
+            return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers
         }
+        catch {
+            $responseBodyText = Get-PartnerCenterErrorResponseBodyText -ErrorRecord $_
+            $errorDetailsMessage = if ($null -ne $_.ErrorDetails) { [string]$_.ErrorDetails.Message } else { '' }
+            if ($attempt -lt $maxAttempts -and (Test-IsTransientPartnerCenterError -ErrorRecord $_ -ResponseBodyText $responseBodyText -ErrorDetailsMessage $errorDetailsMessage)) {
+                $delaySeconds = 5 * $attempt
+                Write-Warning "Transient Partner Center request failure on attempt $attempt/$maxAttempts for $Method $Uri. Retrying in $delaySeconds seconds."
+                Start-Sleep -Seconds $delaySeconds
+                continue
+            }
 
-        $enrichedError = [System.Management.Automation.ErrorRecord]::new($_.Exception, $_.FullyQualifiedErrorId, $_.CategoryInfo.Category, $_.TargetObject)
-        $enrichedError.ErrorDetails = [System.Management.Automation.ErrorDetails]::new($responseBodyText)
-        throw $enrichedError
+            if ([string]::IsNullOrWhiteSpace($responseBodyText) -or -not [string]::IsNullOrWhiteSpace($errorDetailsMessage)) {
+                throw
+            }
+
+            $enrichedError = [System.Management.Automation.ErrorRecord]::new($_.Exception, $_.FullyQualifiedErrorId, $_.CategoryInfo.Category, $_.TargetObject)
+            $enrichedError.ErrorDetails = [System.Management.Automation.ErrorDetails]::new($responseBodyText)
+            throw $enrichedError
+        }
     }
 }
 
@@ -241,18 +328,101 @@ function Get-OptionalObjectPropertyValue {
     return $property.Value
 }
 
-function Get-OptionalObjectPropertyEntries {
-    param(
-        [Parameter(Mandatory = $true)][AllowNull()][object]$InputObject,
-        [Parameter(Mandatory = $true)][string]$PropertyName
-    )
+function Get-ObjectEntryCount {
+    param([AllowNull()][object]$InputObject)
 
-    $propertyValue = Get-OptionalObjectPropertyValue -InputObject $InputObject -PropertyName $PropertyName
-    if ($null -eq $propertyValue) {
-        return ,@()
+    if ($null -eq $InputObject) {
+        return 0
     }
 
-    return ,@($propertyValue)
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        return $InputObject.Count
+    }
+
+    if ($InputObject -is [System.Array]) {
+        return @($InputObject).Count
+    }
+
+    $propertyNames = @($InputObject.PSObject.Properties | ForEach-Object { $_.Name })
+    if ($propertyNames.Count -gt 0) {
+        return $propertyNames.Count
+    }
+
+    return 1
+}
+
+function New-ProductionSubmissionCreateSeed {
+    param([Parameter(Mandatory = $true)][AllowNull()][object]$PublishedSubmissionDetails)
+
+    $mutablePropertyNames = @(
+        'applicationCategory',
+        'pricing',
+        'visibility',
+        'targetPublishMode',
+        'targetPublishDate',
+        'listings',
+        'hardwarePreferences',
+        'automaticBackupEnabled',
+        'canInstallOnRemovableMedia',
+        'isGameDvrEnabled',
+        'hasExternalInAppProducts',
+        'meetAccessibilityGuidelines',
+        'notesForCertification',
+        'applicationPackages',
+        'packageDeliveryOptions',
+        'enterpriseLicensing',
+        'allowMicrosoftDecideAppAvailabilityToFutureDeviceFamilies',
+        'allowTargetFutureDeviceFamilies',
+        'trailers'
+    )
+
+    $createSeed = [ordered]@{}
+    foreach ($propertyName in $mutablePropertyNames) {
+        $propertyValue = Get-OptionalObjectPropertyValue -InputObject $PublishedSubmissionDetails -PropertyName $propertyName
+        if ($null -ne $propertyValue) {
+            $createSeed[$propertyName] = Convert-ToPartnerCenterJsonCompatibleValue -InputObject $propertyValue
+        }
+    }
+
+    return [pscustomobject]$createSeed
+}
+
+function Convert-ToPartnerCenterJsonCompatibleValue {
+    param([AllowNull()][object]$InputObject)
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+
+    if ($InputObject -is [System.Array]) {
+        $convertedItems = @()
+        foreach ($item in @($InputObject)) {
+            $convertedItems += ,(Convert-ToPartnerCenterJsonCompatibleValue -InputObject $item)
+        }
+
+        return ,([object[]]$convertedItems)
+    }
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $convertedMap = [ordered]@{}
+        foreach ($key in $InputObject.Keys) {
+            $convertedMap[[string]$key] = Convert-ToPartnerCenterJsonCompatibleValue -InputObject $InputObject[$key]
+        }
+
+        return [pscustomobject]$convertedMap
+    }
+
+    $propertyNames = @($InputObject.PSObject.Properties | ForEach-Object { $_.Name })
+    if ($propertyNames.Count -gt 0 -and $InputObject -isnot [string]) {
+        $convertedObject = [ordered]@{}
+        foreach ($propertyName in $propertyNames) {
+            $convertedObject[$propertyName] = Convert-ToPartnerCenterJsonCompatibleValue -InputObject $InputObject.PSObject.Properties[$propertyName].Value
+        }
+
+        return [pscustomobject]$convertedObject
+    }
+
+    return $InputObject
 }
 
 function Set-OptionalObjectPropertyValue {
@@ -663,11 +833,41 @@ if ([string]::IsNullOrWhiteSpace($publishedSubmissionId)) {
     throw "$submissionOwnerLabel does not have a published submission to clone."
 }
 
-$newSubmission = Invoke-PartnerCenterRequest -Method Post -Uri $submissionsUri -AccessToken $token -Body @{}
+$publishedSubmissionDetails = $null
+$createSubmissionBody = @{}
+
+if ($SubmissionTarget -eq 'Production') {
+    $publishedSubmissionUri = "$submissionsUri/$publishedSubmissionId"
+    $publishedSubmissionDetails = Invoke-PartnerCenterRequest -Method Get -Uri $publishedSubmissionUri -AccessToken $token
+    $createSubmissionBody = New-ProductionSubmissionCreateSeed -PublishedSubmissionDetails $publishedSubmissionDetails
+}
+
+try {
+    Write-Output 'ProgressStage=CreateSubmissionRequested'
+    $newSubmission = Invoke-PartnerCenterRequest -Method Post -Uri $submissionsUri -AccessToken $token -Body $createSubmissionBody
+}
+catch {
+    if ($SubmissionTarget -ne 'Production') {
+        throw
+    }
+
+    $submissionOwnerAfterCreate = Invoke-PartnerCenterRequest -Method Get -Uri $submissionOwnerUri -AccessToken $token
+    $pendingSubmissionAfterCreate = Get-OptionalObjectPropertyValue -InputObject $submissionOwnerAfterCreate -PropertyName $pendingSubmissionPropertyName
+    $pendingSubmissionIdAfterCreate = if ($null -ne $pendingSubmissionAfterCreate) { [string]$pendingSubmissionAfterCreate.id } else { '' }
+    if ([string]::IsNullOrWhiteSpace($pendingSubmissionIdAfterCreate)) {
+        throw
+    }
+
+    $newSubmission = [pscustomobject]@{ id = $pendingSubmissionIdAfterCreate }
+    Write-Output 'ProgressStage=CreateSubmissionRecoveredFromPendingDraft'
+}
+
 $submissionId = [string]$newSubmission.id
 if ([string]::IsNullOrWhiteSpace($submissionId)) {
     throw 'Partner Center did not return a submission id.'
 }
+
+Write-Output 'ProgressStage=CreateSubmissionCompleted'
 
 $submissionUri = "$submissionsUri/$submissionId"
 $submission = Invoke-PartnerCenterRequest -Method Get -Uri $submissionUri -AccessToken $token
@@ -682,7 +882,9 @@ New-Item -ItemType Directory -Path $workingDirectory -Force | Out-Null
 
 try {
     $archivePath = New-PackageUploadArchive -SourcePackagePath $resolvedPackagePath -DestinationDirectory $workingDirectory
+    Write-Output 'ProgressStage=PackageUploadStarted'
     Upload-PartnerCenterPackage -UploadUrl $fileUploadUrl -ArchivePath $archivePath
+    Write-Output 'ProgressStage=PackageUploadCompleted'
 }
 finally {
     if (Test-Path -LiteralPath $workingDirectory) {
@@ -690,17 +892,17 @@ finally {
     }
 }
 
-$publishedSubmissionDetails = $null
-
 if ($SubmissionTarget -eq 'Production') {
-    $submissionListings = Get-OptionalObjectPropertyEntries -InputObject $submission -PropertyName 'listings'
-    if ($submissionListings.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($publishedSubmissionId)) {
-        $publishedSubmissionUri = "$submissionsUri/$publishedSubmissionId"
-        $publishedSubmissionDetails = Invoke-PartnerCenterRequest -Method Get -Uri $publishedSubmissionUri -AccessToken $token
-        $submissionListings = Get-OptionalObjectPropertyEntries -InputObject $publishedSubmissionDetails -PropertyName 'listings'
+    $submissionListings = Get-OptionalObjectPropertyValue -InputObject $submission -PropertyName 'listings'
+    if ((Get-ObjectEntryCount -InputObject $submissionListings) -eq 0 -and -not [string]::IsNullOrWhiteSpace($publishedSubmissionId)) {
+        if ($null -eq $publishedSubmissionDetails) {
+            $publishedSubmissionUri = "$submissionsUri/$publishedSubmissionId"
+            $publishedSubmissionDetails = Invoke-PartnerCenterRequest -Method Get -Uri $publishedSubmissionUri -AccessToken $token
+        }
+        $submissionListings = Get-OptionalObjectPropertyValue -InputObject $publishedSubmissionDetails -PropertyName 'listings'
     }
 
-    if ($submissionListings.Count -gt 0) {
+    if ((Get-ObjectEntryCount -InputObject $submissionListings) -gt 0) {
         Set-OptionalObjectPropertyValue -InputObject $submission -PropertyName 'listings' -Value $submissionListings
     }
 }
@@ -745,7 +947,9 @@ switch ($TargetPublishMode) {
 }
 
 try {
+    Write-Output 'ProgressStage=SubmissionUpdateStarted'
     $updatedSubmission = Invoke-PartnerCenterRequest -Method Put -Uri $submissionUri -AccessToken $token -Body $submission
+    Write-Output 'ProgressStage=SubmissionUpdateCompleted'
 }
 catch {
     $missingPackageIds = @(Get-MissingPackageIdsFromPartnerCenterError -ErrorRecord $_)
@@ -769,21 +973,30 @@ catch {
         -ExistingPackages $existingPackages `
         -MarkSupersededPackagesPendingDelete:$MarkSupersededPackagesPendingDelete.IsPresent `
         -RetryMissingPackageId $missingPackageId
+    Write-Output 'ProgressStage=SubmissionUpdateRetryStarted'
     $updatedSubmission = Invoke-PartnerCenterRequest -Method Put -Uri $submissionUri -AccessToken $token -Body $submission
+    Write-Output 'ProgressStage=SubmissionUpdateCompleted'
 }
 
 $commitUri = "$submissionUri/commit"
+Write-Output 'ProgressStage=CommitRequested'
 Invoke-PartnerCenterRequest -Method Post -Uri $commitUri -AccessToken $token -Body @{} | Out-Null
 
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $finalStatus = ''
 $finalStatusDetails = $null
+$lastReportedStatus = ''
 
 do {
     Start-Sleep -Seconds $StatusPollIntervalSeconds
     $currentSubmission = Invoke-PartnerCenterRequest -Method Get -Uri $submissionUri -AccessToken $token
     $finalStatus = [string]$currentSubmission.status
     $finalStatusDetails = $currentSubmission.statusDetails
+
+    if ($finalStatus -ne $lastReportedStatus) {
+        Write-Output "ProgressStage=CommitStatus:$finalStatus"
+        $lastReportedStatus = $finalStatus
+    }
 
     if (Test-IsCommitFailureStatus -Status $finalStatus) {
         $details = Get-StatusDetailsText -StatusDetails $finalStatusDetails
