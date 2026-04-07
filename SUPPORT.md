@@ -2,9 +2,9 @@
 
 ## Where to ask for help
 
-- Bug reports: open a GitHub issue with the bug report template.
-- Feature requests: open a GitHub issue with the feature request template.
-- Security issues: follow `SECURITY.md` instead of opening a public issue.
+- Bug reports: [open a GitHub issue](https://github.com/lumalilt/NWSHelper/issues/new/choose) with the bug report template.
+- Feature requests: [open a GitHub issue](https://github.com/lumalilt/NWSHelper/issues/new/choose) with the feature request template.
+- Security issues: follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
 ## Before filing an issue
 
