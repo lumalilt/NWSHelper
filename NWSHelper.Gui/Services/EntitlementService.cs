@@ -581,6 +581,11 @@ public sealed class SupabaseEntitlementService : IEntitlementService
             return false;
         }
 
+        if (string.Equals(snapshot.ValidationSource, "AccountLink", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (forceOnlineRevalidation)
         {
             return true;

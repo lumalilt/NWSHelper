@@ -12,6 +12,25 @@ namespace NWSHelper.Tests;
 public class StoreContinuityViewModelTests
 {
     [Fact]
+    public void Constructor_DefaultsSelectAllToEnabled()
+    {
+        var viewModel = CreateViewModel();
+
+        Assert.True(viewModel.SelectAll);
+    }
+
+    [Fact]
+    public void ResetSetupDefaults_RestoresSelectAllToEnabled()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.SelectAll = false;
+
+        viewModel.ResetSetupDefaultsCommand.Execute(null);
+
+        Assert.True(viewModel.SelectAll);
+    }
+
+    [Fact]
     public async Task StartupPolicy_WhenStoreInstallIsUnlinked_PromptsFromSettingsAndRequestsAttention()
     {
         var viewModel = CreateViewModel(updateService: new FakeUpdateService { IsStoreInstall = true });
@@ -114,6 +133,69 @@ public class StoreContinuityViewModelTests
     }
 
     [Fact]
+    public async Task BuildPreview_WhenDatasetRootAlreadyPointsAtProviderFolder_NormalizesToBaseRoot()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "nwshelper-provider-root-normalize", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            var providerRoot = Path.Combine(tempDirectory, "openaddresses");
+            Directory.CreateDirectory(providerRoot);
+
+            var boundaryPath = Path.Combine(tempDirectory, "Territories.csv");
+            File.WriteAllText(boundaryPath, "placeholder");
+
+            var extractionOrchestrator = new CapturingExtractionOrchestrator();
+            var viewModel = CreateViewModel(extractionOrchestrator: extractionOrchestrator);
+            viewModel.BoundaryCsvPath = boundaryPath;
+            viewModel.DatasetRootPath = providerRoot;
+
+            await viewModel.BuildPreviewCommand.ExecuteAsync(null);
+
+            Assert.NotNull(extractionOrchestrator.LastRequest);
+            Assert.Equal(Path.GetFullPath(tempDirectory), extractionOrchestrator.LastRequest!.DatasetRootPath);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DownloadSelectedDatasetsAsync_KeepsDatasetRootAtBaseFolder()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "nwshelper-download-base-root", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            var datasetDownloadService = new FakeDatasetDownloadService
+            {
+                DownloadResult = new DatasetDownloadResult(Path.Combine(Path.GetFullPath(tempDirectory), "openaddresses"), 1, 1)
+            };
+
+            var viewModel = CreateViewModel(datasetDownloadService: datasetDownloadService);
+            viewModel.DatasetRootPath = tempDirectory;
+
+            await viewModel.DownloadSelectedDatasetsCommand.ExecuteAsync(new[] { "us/md/harford" });
+
+            Assert.Equal(Path.GetFullPath(tempDirectory), viewModel.DatasetRootPath);
+            Assert.Equal(tempDirectory, datasetDownloadService.LastDownloadRequest?.DatasetRootPath);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task StartupPolicy_WhenStoreLinkExistsButEntitlementIsFree_RefreshesLinkedEntitlement()
     {
         var accountLinkService = new FakeAccountLinkService
@@ -160,6 +242,57 @@ public class StoreContinuityViewModelTests
         Assert.Equal(1, accountLinkService.RefreshStatusCalls);
         Assert.True(viewModel.HasUnlimitedAddressesAddOn);
         Assert.False(viewModel.HasStoreContinuityPrompt);
+        Assert.Equal("Account link status refreshed.", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public async Task StartupPolicy_WhenDirectInstallHasLinkedAccountButFreeSnapshot_RefreshesLinkedEntitlement()
+    {
+        var accountLinkService = new FakeAccountLinkService
+        {
+            Snapshot = new AccountLinkSnapshot
+            {
+                Status = AccountLinkStateStatus.Linked,
+                AccountId = "acct_direct",
+                Email = "direct@example.com",
+                PurchaseSource = "direct",
+                LinkedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+                LastSyncUtc = DateTimeOffset.UtcNow.AddMinutes(-5)
+            },
+            RefreshStatusResult = new AccountLinkOperationResult
+            {
+                IsSuccess = true,
+                Message = "Account link status refreshed.",
+                Snapshot = new AccountLinkSnapshot
+                {
+                    Status = AccountLinkStateStatus.Linked,
+                    AccountId = "acct_direct",
+                    Email = "direct@example.com",
+                    PurchaseSource = "direct",
+                    LinkedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+                    LastSyncUtc = DateTimeOffset.UtcNow
+                },
+                EntitlementSnapshot = new EntitlementSnapshot
+                {
+                    BasePlanCode = EntitlementProductCodes.FreeBasePlan,
+                    AddOnCodes = [EntitlementProductCodes.UnlimitedAddressesAddOn],
+                    MaxNewAddressesPerTerritory = null,
+                    LastValidatedUtc = DateTimeOffset.UtcNow,
+                    ValidationSource = "Online"
+                }
+            }
+        };
+
+        var viewModel = CreateViewModel(
+            accountLinkService: accountLinkService,
+            updateService: new FakeUpdateService { IsStoreInstall = false });
+
+        await viewModel.RunStartupStoreContinuityPolicyAsync();
+
+        Assert.Equal(1, accountLinkService.RefreshStatusCalls);
+        Assert.True(viewModel.HasUnlimitedAddressesAddOn);
+        Assert.Equal("Unlimited Addresses", viewModel.EntitlementAddOnLabel);
+        Assert.Equal("Unlimited Addresses linked", viewModel.AccountLinkStatusLabel);
         Assert.Equal("Account link status refreshed.", viewModel.StatusMessage);
     }
 
@@ -283,11 +416,25 @@ public class StoreContinuityViewModelTests
     }
 
     [Fact]
+    public async Task OpenSupportLinkAsync_UsesConfiguredOutputActions()
+    {
+        var outputPathActions = new FakeOutputPathActions();
+        var viewModel = CreateViewModel(outputPathActions: outputPathActions);
+
+        await viewModel.OpenSupportLinkCommand.ExecuteAsync(null);
+
+        Assert.Equal("https://lumalilt.com/nwshelper/support", outputPathActions.LastOpenedUrl);
+        Assert.Equal("Opened support page.", viewModel.StatusMessage);
+        Assert.Null(viewModel.LastError);
+    }
+
+    [Fact]
     public void PublicGuiMarkup_ContainsStoreContinuityAttentionBindingsAndStartupHook()
     {
         var settingsMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "SettingsStageView.axaml"));
         var settingsCodeBehind = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "SettingsStageView.axaml.cs"));
         var appMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "App.axaml"));
+        var mainWindowMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "MainWindow.axaml"));
         var mainWindowCodeBehind = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "MainWindow.axaml.cs"));
 
         Assert.Contains("HasStoreContinuityPrompt", settingsMarkup, StringComparison.Ordinal);
@@ -303,11 +450,16 @@ public class StoreContinuityViewModelTests
         Assert.Contains("StoreContinuityAttentionRequestId", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("BringIntoView", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("PulseStoreContinuityPromptAsync", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("OpenSupportLinkCommand", mainWindowMarkup, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"Support\"", mainWindowMarkup, StringComparison.Ordinal);
+        Assert.True(mainWindowMarkup.IndexOf("OpenSupportLinkCommand", StringComparison.Ordinal) < mainWindowMarkup.LastIndexOf("GoToSettingsCommand", StringComparison.Ordinal));
         Assert.Contains("RunStartupStoreContinuityPolicyAsync", mainWindowCodeBehind, StringComparison.Ordinal);
     }
 
     private static MainWindowViewModel CreateViewModel(
         IExtractionOrchestrator? extractionOrchestrator = null,
+        IOutputPathActions? outputPathActions = null,
+        IDatasetDownloadService? datasetDownloadService = null,
         IEntitlementService? entitlementService = null,
         IAccountLinkService? accountLinkService = null,
         IUpdateService? updateService = null,
@@ -316,6 +468,8 @@ public class StoreContinuityViewModelTests
     {
         return new MainWindowViewModel(
             extractionOrchestrator: extractionOrchestrator ?? new CapturingExtractionOrchestrator(),
+            outputPathActions: outputPathActions ?? new FakeOutputPathActions(),
+            datasetDownloadService: datasetDownloadService ?? new FakeDatasetDownloadService(),
             themeService: new FakeThemeService(),
             setupSettingsService: new FakeSetupSettingsService(),
             entitlementService: entitlementService ?? new FakeEntitlementService(),
@@ -338,6 +492,79 @@ public class StoreContinuityViewModelTests
         public void ApplyTheme(AppThemePreference preference)
         {
             CurrentPreference = preference;
+        }
+    }
+
+    private sealed class FakeOutputPathActions : IOutputPathActions
+    {
+        public string? LastOpenedUrl { get; private set; }
+
+        public Task<bool> OpenPathAsync(string path)
+        {
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> OpenUrlAsync(string url)
+        {
+            LastOpenedUrl = url;
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> CopyPathAsync(string path)
+        {
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> PreviewMapAsync(string path, string? boundaryCsvPath, string? previewContextLabel = null, System.Collections.Generic.IReadOnlyCollection<string>? selectedTerritoryIds = null)
+        {
+            return Task.FromResult(true);
+        }
+
+        public Task PreloadMapTilesAsync(System.Collections.Generic.IReadOnlyCollection<string> outputPaths, string? boundaryCsvPath)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeDatasetDownloadService : IDatasetDownloadService
+    {
+        public DatasetDownloadRequest? LastDownloadRequest { get; private set; }
+
+        public DatasetDownloadResult DownloadResult { get; set; } = new(Path.GetFullPath("./datasets/openaddresses"), 0, 0);
+
+        public IReadOnlyList<DatasetProviderOption> GetProviders()
+        {
+            return [new DatasetProviderOption("openaddresses", "OpenAddresses", "openaddresses")];
+        }
+
+        public string ResolveBaseDatasetRoot(string datasetRootPath, string providerId)
+        {
+            var fullRoot = Path.GetFullPath(string.IsNullOrWhiteSpace(datasetRootPath) ? "./datasets" : datasetRootPath);
+            var rootName = Path.GetFileName(fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            return string.Equals(rootName, "openaddresses", StringComparison.OrdinalIgnoreCase)
+                ? Directory.GetParent(fullRoot)?.FullName ?? fullRoot
+                : fullRoot;
+        }
+
+        public string ResolveProviderDatasetRoot(string datasetRootPath, string providerId)
+        {
+            return Path.Combine(ResolveBaseDatasetRoot(datasetRootPath, providerId), "openaddresses");
+        }
+
+        public Task<IReadOnlyList<DatasetCatalogItem>> GetDatasetsAsync(string providerId, string? openAddressesApiBaseUrl, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<DatasetCatalogItem>>([]);
+        }
+
+        public Task<DatasetDownloadResult> DownloadDatasetsAsync(DatasetDownloadRequest request, IProgress<DatasetDownloadProgress>? progress, CancellationToken cancellationToken)
+        {
+            LastDownloadRequest = request;
+            return Task.FromResult(DownloadResult);
+        }
+
+        public Task<DatasetProviderConnectionTestResult> TestProviderConnectionAsync(string providerId, string? openAddressesApiBaseUrl, string? openAddressesApiToken, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new DatasetProviderConnectionTestResult(true, "ok"));
         }
     }
 

@@ -18,6 +18,7 @@ namespace NWSHelper.Gui.ViewModels;
 public partial class MainWindowViewModel : ViewModelBase
 {
     private const string SmartFillNoneOption = "None";
+    private const string SupportUrl = "https://lumalilt.com/nwshelper/support";
 
     private readonly IExtractionOrchestrator extractionOrchestrator;
     private readonly IDatasetDownloadService datasetDownloadService;
@@ -159,7 +160,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool smartSelect;
 
     [ObservableProperty]
-    private bool selectAll;
+    private bool selectAll = true;
 
     [ObservableProperty]
     private bool outputExistingNoneNew;
@@ -718,6 +719,22 @@ public partial class MainWindowViewModel : ViewModelBase
     private void GoToSettings() => EnterSettingsStage();
 
     [RelayCommand]
+    private async Task OpenSupportLinkAsync()
+    {
+        LastError = null;
+
+        var opened = await outputPathActions.OpenUrlAsync(SupportUrl);
+        if (opened)
+        {
+            StatusMessage = "Opened support page.";
+            return;
+        }
+
+        LastError = $"Could not open support page: {SupportUrl}";
+        StatusMessage = "Open support page failed.";
+    }
+
+    [RelayCommand]
     private async Task ExecutePrimaryActionAsync()
     {
         if (IsBusy)
@@ -1172,6 +1189,21 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (!IsStoreInstall)
         {
+            if (ShouldRefreshLinkedAccountEntitlement(activeAccountLinkSnapshot))
+            {
+                IsAccountLinkBusy = true;
+                LastError = null;
+
+                try
+                {
+                    await RefreshAccountLinkStatusCoreAsync(CancellationToken.None);
+                }
+                finally
+                {
+                    IsAccountLinkBusy = false;
+                }
+            }
+
             return;
         }
 
@@ -1357,7 +1389,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 CancellationToken.None);
 
             SelectedDatasetSourcesCsv = string.Join(',', selectedKeys);
-            DatasetRootPath = downloadResult.ProviderDatasetRootPath;
+            DatasetRootPath = datasetDownloadService.ResolveBaseDatasetRoot(downloadResult.ProviderDatasetRootPath, SelectedDatasetProviderId);
 
             DatasetDownloadPercent = 100;
             DatasetDownloadMessage = $"Downloaded {downloadResult.DownloadedCount}/{downloadResult.RequestedCount} datasets.";
@@ -1516,10 +1548,10 @@ public partial class MainWindowViewModel : ViewModelBase
             if (selectedMissingPreExisting > 0 && !request.ForceWithoutAddressInput && !request.NoPrompt)
             {
                 var promptDetail = string.IsNullOrWhiteSpace(request.ExistingAddressesCsvPath)
-                    ? "No pre-existing addresses file was provided."
-                    : "No pre-existing rows matched selected territories.";
-                LastError = $"{promptDetail} Enable 'Force without address input' to proceed ({selectedMissingPreExisting} territories).";
-                StatusMessage = "Extraction blocked pending force-without-address-input.";
+                    ? $"No existing addresses file was provided for {selectedMissingPreExisting} territories."
+                    : $"No existing addresses for {selectedMissingPreExisting} of the selected territories.";
+                LastError = $"{promptDetail} Enable 'Don't require all existing' to proceed if you're sure these have no existing addresses or if you don't mind losing statuses on them.";
+                StatusMessage = "Extraction blocked unless 'Don't require all existing' is enabled.";
                 RunState = "BLOCKED";
                 CurrentStage = WorkflowStage.Preview;
                 return;
@@ -2511,6 +2543,12 @@ public partial class MainWindowViewModel : ViewModelBase
             && !activeEntitlementSnapshot.HasUnlimitedAddressesAddOn;
     }
 
+    private bool ShouldRefreshLinkedAccountEntitlement(AccountLinkSnapshot snapshot)
+    {
+        return snapshot.Status == AccountLinkStateStatus.Linked
+            && !activeEntitlementSnapshot.HasUnlimitedAddressesAddOn;
+    }
+
     private void RequestStoreContinuityAttention()
     {
         StoreContinuityAttentionRequestId++;
@@ -2681,7 +2719,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             BoundaryCsvPath = BoundaryCsvPath,
             ExistingAddressesCsvPath = string.IsNullOrWhiteSpace(ExistingAddressesCsvPath) ? null : ExistingAddressesCsvPath,
-            DatasetRootPath = DatasetRootPath,
+            DatasetRootPath = datasetDownloadService.ResolveBaseDatasetRoot(DatasetRootPath, SelectedDatasetProviderId),
             StatesFilterCsv = StatesFilter,
             ConsolidatedOutputPath = string.IsNullOrWhiteSpace(ConsolidatedOutputPath)
                 ? null
@@ -2746,7 +2784,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return false;
         }
 
-        var datasetRoot = Path.GetFullPath(DatasetRootPath);
+        var datasetRoot = datasetDownloadService.ResolveBaseDatasetRoot(DatasetRootPath, SelectedDatasetProviderId);
         if (!Directory.Exists(datasetRoot))
         {
             validationError = $"Dataset root not found: {datasetRoot}";

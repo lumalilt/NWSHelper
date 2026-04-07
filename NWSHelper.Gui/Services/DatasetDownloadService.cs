@@ -40,7 +40,7 @@ public sealed class DatasetDownloadService : IDatasetDownloadService, IDisposabl
 
     public IReadOnlyList<DatasetProviderOption> GetProviders() => Providers;
 
-    public string ResolveProviderDatasetRoot(string datasetRootPath, string providerId)
+    public string ResolveBaseDatasetRoot(string datasetRootPath, string providerId)
     {
         var provider = Providers.FirstOrDefault(option => string.Equals(option.Id, providerId, StringComparison.OrdinalIgnoreCase));
         if (provider is null)
@@ -56,10 +56,23 @@ public sealed class DatasetDownloadService : IDatasetDownloadService, IDisposabl
         var fullRootName = Path.GetFileName(fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         if (string.Equals(fullRootName, provider.RelativeRootFolder, StringComparison.OrdinalIgnoreCase))
         {
-            return fullRoot;
+            return Directory.GetParent(fullRoot)?.FullName ?? fullRoot;
         }
 
-        return Path.Combine(fullRoot, provider.RelativeRootFolder);
+        return fullRoot;
+    }
+
+    public string ResolveProviderDatasetRoot(string datasetRootPath, string providerId)
+    {
+        var provider = Providers.FirstOrDefault(option => string.Equals(option.Id, providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider is null)
+        {
+            throw new InvalidOperationException($"Unsupported dataset provider '{providerId}'.");
+        }
+
+        var baseRoot = ResolveBaseDatasetRoot(datasetRootPath, providerId);
+
+        return Path.Combine(baseRoot, provider.RelativeRootFolder);
     }
 
     public Task<IReadOnlyList<DatasetCatalogItem>> GetDatasetsAsync(
@@ -326,6 +339,12 @@ public sealed class DatasetDownloadService : IDatasetDownloadService, IDisposabl
 
     private static async Task WriteCsvFromGeoJsonFileAsync(string geoJsonFilePath, CsvHelper.CsvWriter csv, CancellationToken cancellationToken)
     {
+        if (await LooksLikeJsonLinesAsync(geoJsonFilePath, cancellationToken))
+        {
+            await WriteCsvFromJsonLinesAsync(geoJsonFilePath, csv, cancellationToken);
+            return;
+        }
+
         try
         {
             await using var stream = File.OpenRead(geoJsonFilePath);
@@ -368,6 +387,44 @@ public sealed class DatasetDownloadService : IDatasetDownloadService, IDisposabl
         {
             await WriteCsvFromJsonLinesAsync(geoJsonFilePath, csv, cancellationToken);
         }
+    }
+
+    private static async Task<bool> LooksLikeJsonLinesAsync(string geoJsonFilePath, CancellationToken cancellationToken)
+    {
+        using var stream = File.OpenRead(geoJsonFilePath);
+        using var reader = new StreamReader(stream);
+
+        var parsedStandaloneObjects = 0;
+
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(line);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    return false;
+                }
+
+                parsedStandaloneObjects++;
+                if (parsedStandaloneObjects >= 2)
+                {
+                    return true;
+                }
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private static async Task WriteCsvFromJsonLinesAsync(string geoJsonFilePath, CsvHelper.CsvWriter csv, CancellationToken cancellationToken)

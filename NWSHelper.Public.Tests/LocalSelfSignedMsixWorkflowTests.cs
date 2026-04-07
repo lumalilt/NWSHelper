@@ -59,33 +59,46 @@ public class LocalSelfSignedMsixWorkflowTests
     }
 
     [Fact]
-    public void Readme_DocumentsLocalSelfSignedMsixWorkflow()
+    public void Readme_DocumentsSupportedPublicSurface()
     {
         var readmePath = Path.Combine(GetRepositoryRoot(), "README.md");
         Assert.True(File.Exists(readmePath), $"Expected README at {readmePath}");
 
         var readme = File.ReadAllText(readmePath);
 
-        Assert.Contains("build-local-self-signed-msix.ps1", readme, StringComparison.Ordinal);
-        Assert.Contains("self-signed", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("ImportCertificateToTrustedPeople", readme, StringComparison.Ordinal);
-        Assert.Contains("InstallPackage", readme, StringComparison.Ordinal);
-        Assert.Contains("SkipLaunchAfterInstall", readme, StringComparison.Ordinal);
-        Assert.Contains("RefreshShellIconCache", readme, StringComparison.Ordinal);
-        Assert.Contains("launch the installed app", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("CurrentUser\\Root", readme, StringComparison.Ordinal);
-        Assert.Contains("Administrator", readme, StringComparison.Ordinal);
-        Assert.Contains("current user stores", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("re-run the helper as Administrator", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("MSIX-safe timestamped local version", readme, StringComparison.Ordinal);
-        Assert.Contains("day-of-year", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("HHmm", readme, StringComparison.Ordinal);
-        Assert.Contains("restarting Windows Explorer", readme, StringComparison.Ordinal);
-        Assert.Contains("resources.pri", readme, StringComparison.Ordinal);
-        Assert.Contains("unplated AppList icon qualifiers", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("revision `.1`", readme, StringComparison.Ordinal);
+        Assert.Contains("# NWS Helper", readme, StringComparison.Ordinal);
+        Assert.Contains("This repository is intended to contain the public GUI, CLI, packaging scripts, release automation, and public-facing documentation.", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("ApplicationId", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("FlightId", readme, StringComparison.Ordinal);
+
+        if (readme.Contains("build-local-self-signed-msix.ps1", StringComparison.Ordinal))
+        {
+            Assert.Contains("self-signed", readme, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("ImportCertificateToTrustedPeople", readme, StringComparison.Ordinal);
+            Assert.Contains("InstallPackage", readme, StringComparison.Ordinal);
+            Assert.Contains("SkipLaunchAfterInstall", readme, StringComparison.Ordinal);
+            Assert.Contains("RefreshShellIconCache", readme, StringComparison.Ordinal);
+            Assert.Contains("launch the installed app", readme, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("CurrentUser\\Root", readme, StringComparison.Ordinal);
+            Assert.Contains("Administrator", readme, StringComparison.Ordinal);
+            Assert.Contains("current user stores", readme, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("re-run the helper as Administrator", readme, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("MSIX-safe timestamped local version", readme, StringComparison.Ordinal);
+            Assert.Contains("day-of-year", readme, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("HHmm", readme, StringComparison.Ordinal);
+            Assert.Contains("restarting Windows Explorer", readme, StringComparison.Ordinal);
+            Assert.Contains("resources.pri", readme, StringComparison.Ordinal);
+            Assert.Contains("unplated AppList icon qualifiers", readme, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("revision `.1`", readme, StringComparison.Ordinal);
+            return;
+        }
+
+        Assert.Contains("## Features", readme, StringComparison.Ordinal);
+        Assert.Contains("## Repo", readme, StringComparison.Ordinal);
+        Assert.Contains("## Development", readme, StringComparison.Ordinal);
+        Assert.Contains("[SUPPORT.md](./SUPPORT.md)", readme, StringComparison.Ordinal);
+        Assert.Contains("[SECURITY.md](./SECURITY.md)", readme, StringComparison.Ordinal);
+        Assert.Contains("[docs/development.md](./docs/development.md)", readme, StringComparison.Ordinal);
     }
 
     private static string GetRepositoryRoot()

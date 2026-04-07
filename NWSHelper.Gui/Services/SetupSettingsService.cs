@@ -50,7 +50,7 @@ public sealed class GuiSetupSettings
 
     public bool SmartSelect { get; set; }
 
-    public bool SelectAll { get; set; }
+    public bool SelectAll { get; set; } = true;
 
     public bool OutputExistingNoneNew { get; set; }
 

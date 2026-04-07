@@ -15,6 +15,8 @@ public interface IOutputPathActions
 {
     Task<bool> OpenPathAsync(string path);
 
+    Task<bool> OpenUrlAsync(string url);
+
     Task<bool> CopyPathAsync(string path);
 
     Task<bool> PreviewMapAsync(
@@ -54,6 +56,29 @@ public sealed class OutputPathActions : IOutputPathActions
             Process.Start(new ProcessStartInfo
             {
                 FileName = target,
+                UseShellExecute = true
+            });
+
+            return Task.FromResult(true);
+        }
+        catch
+        {
+            return Task.FromResult(false);
+        }
+    }
+
+    public Task<bool> OpenUrlAsync(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return Task.FromResult(false);
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
                 UseShellExecute = true
             });
 

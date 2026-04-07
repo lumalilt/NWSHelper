@@ -48,6 +48,8 @@ public interface IDatasetDownloadService
 {
     IReadOnlyList<DatasetProviderOption> GetProviders();
 
+    string ResolveBaseDatasetRoot(string datasetRootPath, string providerId);
+
     string ResolveProviderDatasetRoot(string datasetRootPath, string providerId);
 
     Task<IReadOnlyList<DatasetCatalogItem>> GetDatasetsAsync(

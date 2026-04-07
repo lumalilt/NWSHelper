@@ -246,7 +246,7 @@ public sealed class AccountLinkService : IAccountLinkService
 
             var currentSnapshot = GetSnapshot();
             var parsedSnapshot = ParseAccountLinkSnapshot(responseJson);
-            var entitlementSnapshot = ParseEntitlementSnapshot(responseJson);
+            var entitlementSnapshot = NormalizeBridgeEntitlementSnapshot(ParseEntitlementSnapshot(responseJson));
             var signedToken = TryExtractSignedToken(responseJson) ?? string.Empty;
 
             if (!isSuccess)
@@ -301,7 +301,7 @@ public sealed class AccountLinkService : IAccountLinkService
 
             var currentSnapshot = GetSnapshot();
             var parsedSnapshot = ParseAccountLinkSnapshot(responseJson);
-            var entitlementSnapshot = ParseEntitlementSnapshot(responseJson);
+            var entitlementSnapshot = NormalizeBridgeEntitlementSnapshot(ParseEntitlementSnapshot(responseJson));
             var signedToken = TryExtractSignedToken(responseJson) ?? string.Empty;
 
             if (!isSuccess)
@@ -382,7 +382,7 @@ public sealed class AccountLinkService : IAccountLinkService
 
             var currentSnapshot = GetSnapshot();
             var parsedSnapshot = ParseAccountLinkSnapshot(responseJson);
-            var entitlementSnapshot = ParseEntitlementSnapshot(responseJson);
+            var entitlementSnapshot = NormalizeBridgeEntitlementSnapshot(ParseEntitlementSnapshot(responseJson));
             var signedToken = TryExtractSignedToken(responseJson) ?? string.Empty;
 
             if (!isSuccess)
@@ -652,13 +652,34 @@ public sealed class AccountLinkService : IAccountLinkService
                 MaxNewAddressesPerTerritory = maxNewAddresses,
                 ExpiresUtc = ReadNullableDateTimeOffset(root, "expiresUtc") ?? ReadNullableDateTimeOffset(root, "expires_utc"),
                 LastValidatedUtc = DateTimeOffset.UtcNow,
-                ValidationSource = ReadString(root, "validationSource") ?? ReadString(root, "validation_source") ?? "Online"
+                ValidationSource = ReadString(root, "validationSource") ?? ReadString(root, "validation_source") ?? "AccountLink"
             };
         }
         catch
         {
             return null;
         }
+    }
+
+    private static EntitlementSnapshot? NormalizeBridgeEntitlementSnapshot(EntitlementSnapshot? entitlementSnapshot)
+    {
+        if (entitlementSnapshot is null)
+        {
+            return null;
+        }
+
+        return new EntitlementSnapshot
+        {
+            BasePlanCode = entitlementSnapshot.BasePlanCode,
+            AddOnCodes = entitlementSnapshot.AddOnCodes,
+            MaxNewAddressesPerTerritory = entitlementSnapshot.MaxNewAddressesPerTerritory,
+            ExpiresUtc = entitlementSnapshot.ExpiresUtc,
+            LastValidatedUtc = entitlementSnapshot.LastValidatedUtc,
+            ValidationSource = string.IsNullOrWhiteSpace(entitlementSnapshot.ValidationSource) ||
+                               string.Equals(entitlementSnapshot.ValidationSource, "Online", StringComparison.OrdinalIgnoreCase)
+                ? "AccountLink"
+                : entitlementSnapshot.ValidationSource
+        };
     }
 
     private static string? TryExtractResponseMessage(string json)
@@ -804,7 +825,12 @@ public sealed class AccountLinkService : IAccountLinkService
             return false;
         }
 
-        return string.IsNullOrWhiteSpace(existingSettings.ActivationKey);
+        if (string.IsNullOrWhiteSpace(existingSettings.ActivationKey))
+        {
+            return true;
+        }
+
+        return ShouldBridgeOverrideExistingEntitlement(existingSettings, entitlementSnapshot);
     }
 
     private GuiEntitlementSettings? GetStoredEntitlementSettings()
@@ -828,9 +854,40 @@ public sealed class AccountLinkService : IAccountLinkService
             return null;
         }
 
-        return string.IsNullOrWhiteSpace(existingSettings?.ActivationKey)
+        var currentSettings = existingSettings ?? new GuiEntitlementSettings();
+        return ShouldPersistBridgeEntitlement(currentSettings, entitlementSnapshot)
             ? entitlementSnapshot
             : null;
+    }
+
+    private static bool ShouldBridgeOverrideExistingEntitlement(GuiEntitlementSettings existingSettings, EntitlementSnapshot bridgeEntitlement)
+    {
+        if (!bridgeEntitlement.HasUnlimitedAddressesAddOn)
+        {
+            return false;
+        }
+
+        var existingAddOnCodes = existingSettings.AddOnCodes ?? Array.Empty<string>();
+        if (!HasUnlimitedAddressesAddOn(existingAddOnCodes))
+        {
+            return true;
+        }
+
+        return IsDowngradedEntitlementSource(existingSettings.ValidationSource);
+    }
+
+    private static bool IsDowngradedEntitlementSource(string? validationSource)
+    {
+        if (string.IsNullOrWhiteSpace(validationSource))
+        {
+            return false;
+        }
+
+        return validationSource.Contains("revoked", StringComparison.OrdinalIgnoreCase)
+            || validationSource.Contains("invalid", StringComparison.OrdinalIgnoreCase)
+            || validationSource.Contains("offline", StringComparison.OrdinalIgnoreCase)
+            || validationSource.Contains("expired", StringComparison.OrdinalIgnoreCase)
+            || validationSource.Contains("clockrollback", StringComparison.OrdinalIgnoreCase);
     }
 
     private static GuiEntitlementSettings CloneWithUpdatedAccountLink(GuiEntitlementSettings existingSettings, AccountLinkSnapshot snapshot)

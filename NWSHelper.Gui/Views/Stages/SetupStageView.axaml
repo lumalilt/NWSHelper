@@ -56,7 +56,7 @@
                                 <TextBlock Classes="info-marker" ToolTip.Tip="Required territories boundary CSV file to find new addresses inside of." />
                             </StackPanel>
                             <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding BoundaryCsvPath, Mode=TwoWay}" Watermark="Path to territories CSV" />
-                            <Button x:Name="BoundaryCsvBrowseButton" Grid.Row="0" Grid.Column="2" Content="Browse..." Click="OnBrowseBoundaryCsvClick" ToolTip.Tip="Browse for territories CSV file" />
+                            <Button x:Name="BoundaryCsvBrowseButton" Grid.Row="0" Grid.Column="2" Content="Browse..." Click="OnBrowseBoundaryCsvClick" ToolTip.Tip="Browse for territories CSV file" VerticalAlignment="Top" />
 
                             <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="Existing Territory Addresses CSV" />
@@ -64,12 +64,12 @@
                             </StackPanel>
                             <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
                                 <TextBox Text="{Binding ExistingAddressesCsvPath, Mode=TwoWay}" Watermark="Optional path to exported Territory Addresses CSV" />
-                                <TextBlock Text="Recommended: Do specify your exported Territory Addresses file so existing statuses and notes can be preserved."
+                                <TextBlock Text="Recommended: Do specify your exported Territory Addresses file or existing statuses and notes will be lost if actually present in the system."
                                            FontSize="11"
                                            Opacity="0.78"
                                            TextWrapping="Wrap" />
                             </StackPanel>
-                            <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Click="OnBrowseExistingCsvClick" ToolTip.Tip="Browse for existing territory addresses CSV file" />
+                            <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Click="OnBrowseExistingCsvClick" ToolTip.Tip="Browse for existing territory addresses CSV file" VerticalAlignment="Top" />
 
                             <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="New Addresses Dataset Provider *" />
@@ -90,7 +90,7 @@
                                         </ComboBox.ItemTemplate>
                                     </ComboBox>
 
-                                    <Button x:Name="DatasetSelectorButton" Content="Select Datasets..." Click="OnOpenDatasetSelectorClick" ToolTip.Tip="Choose provider datasets to download">
+                                    <Button x:Name="DatasetSelectorButton" Content="Select Datasets..." Click="OnOpenDatasetSelectorClick" ToolTip.Tip="Choose provider datasets to download" VerticalAlignment="Top">
                                         <Button.Flyout>
                                             <Flyout Placement="Bottom" ShowMode="Standard" Closed="OnDatasetSelectionFlyoutClosed">
                                                 <Border Width="400"
@@ -155,20 +155,21 @@
                                 <TextBlock Classes="info-marker" ToolTip.Tip="Required folder that contains datasets for the selected provider." />
                             </StackPanel>
                             <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding DatasetRootPath, Mode=TwoWay}" />
-                            <Button Grid.Row="3" Grid.Column="2" Content="Browse..." Click="OnBrowseDatasetRootClick" ToolTip.Tip="Browse for dataset root folder" />
+                            <Button Grid.Row="3" Grid.Column="2" Content="Browse..." Click="OnBrowseDatasetRootClick" ToolTip.Tip="Browse for dataset root folder" VerticalAlignment="Top" />
 
                             <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="States/Counties to Use" />
                                 <TextBlock Classes="info-marker" ToolTip.Tip="Comma-separated state or state:county filters for new address CSV files to use for adding addresses (example: MD, MD:baltimore_county)." />
                             </StackPanel>
                             <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding StatesFilter, Mode=TwoWay}" />
-                                <Button x:Name="StatesFilterSelectorButton"
+                            <Button x:Name="StatesFilterSelectorButton"
                                     Grid.Row="4"
                                     Grid.Column="2"
                                     Width="{Binding ElementName=BoundaryCsvBrowseButton, Path=Bounds.Width}"
                                     Content="Select..."
                                     Click="OnOpenStatesFilterSelectorClick"
-                                    ToolTip.Tip="Select states and counties from dataset root">
+                                    ToolTip.Tip="Select states and counties from dataset root"
+                                    VerticalAlignment="Top">
                                 <Button.Flyout>
                                     <Flyout Placement="Bottom" ShowMode="Standard" Closed="OnStatesFilterFlyoutClosed">
                                         <Border Width="420"
