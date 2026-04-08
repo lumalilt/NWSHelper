@@ -51,6 +51,8 @@
                                 <TextBlock Text="2. Use the consolidated file for one full import, or per-territory/category files when testing (recommended at first) or needed." TextWrapping="Wrap" />
                                 <TextBlock Text="3. Click to Copy the path(s) of the generated addresses files you want to import, then import them back into your territory app." TextWrapping="Wrap" />
                                 <TextBlock Text="4. Keep the original exports if you want a rollback point for your existing addresses. Or consider restoring a territory backup you made earlier." TextWrapping="Wrap" />
+                                <TextBlock Text="5. After importing, verify that the addresses have been updated correctly in your territory app." TextWrapping="Wrap" />
+                                <TextBlock Text="6. If you run the process again, be sure to export existing addresses from the territory app (again, if done before) just before to ensure that you keep the data you already have on existing addresses." TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
                     </Expander>

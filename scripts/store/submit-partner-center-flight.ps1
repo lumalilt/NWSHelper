@@ -351,6 +351,35 @@ function Get-ObjectEntryCount {
     return 1
 }
 
+function Test-IsPartnerCenterReferenceType {
+    param([AllowNull()][object]$InputObject)
+
+    if ($null -eq $InputObject) {
+        return $false
+    }
+
+    if ($InputObject -is [string]) {
+        return $false
+    }
+
+    return -not $InputObject.GetType().IsValueType
+}
+
+function Test-PartnerCenterReferencePathContains {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$ReferencePath,
+        [Parameter(Mandatory = $true)][object]$Candidate
+    )
+
+    foreach ($reference in $ReferencePath) {
+        if ([object]::ReferenceEquals($reference, $Candidate)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function New-ProductionSubmissionCreateSeed {
     param([Parameter(Mandatory = $true)][AllowNull()][object]$PublishedSubmissionDetails)
 
@@ -390,39 +419,80 @@ function New-ProductionSubmissionCreateSeed {
 function Convert-ToPartnerCenterJsonCompatibleValue {
     param([AllowNull()][object]$InputObject)
 
+    $referencePath = [System.Collections.Generic.List[object]]::new()
+    return Convert-ToPartnerCenterJsonCompatibleValueInternal -InputObject $InputObject -ReferencePath $referencePath
+}
+
+function Convert-ToPartnerCenterJsonCompatibleValueInternal {
+    param(
+        [AllowNull()][object]$InputObject,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$ReferencePath
+    )
+
     if ($null -eq $InputObject) {
         return $null
     }
 
-    if ($InputObject -is [System.Array]) {
-        $convertedItems = @()
-        foreach ($item in @($InputObject)) {
-            $convertedItems += ,(Convert-ToPartnerCenterJsonCompatibleValue -InputObject $item)
-        }
-
-        return ,([object[]]$convertedItems)
+    if (-not (Test-IsPartnerCenterReferenceType -InputObject $InputObject)) {
+        return $InputObject
     }
 
-    if ($InputObject -is [System.Collections.IDictionary]) {
-        $convertedMap = [ordered]@{}
-        foreach ($key in $InputObject.Keys) {
-            $convertedMap[[string]$key] = Convert-ToPartnerCenterJsonCompatibleValue -InputObject $InputObject[$key]
-        }
-
-        return [pscustomobject]$convertedMap
+    if (Test-PartnerCenterReferencePathContains -ReferencePath $ReferencePath -Candidate $InputObject) {
+        return $null
     }
 
-    $propertyNames = @($InputObject.PSObject.Properties | ForEach-Object { $_.Name })
-    if ($propertyNames.Count -gt 0 -and $InputObject -isnot [string]) {
-        $convertedObject = [ordered]@{}
-        foreach ($propertyName in $propertyNames) {
-            $convertedObject[$propertyName] = Convert-ToPartnerCenterJsonCompatibleValue -InputObject $InputObject.PSObject.Properties[$propertyName].Value
+    $ReferencePath.Add($InputObject)
+    try {
+        if ($InputObject -is [System.Array]) {
+            $convertedItems = @()
+            foreach ($item in @($InputObject)) {
+                $convertedItem = Convert-ToPartnerCenterJsonCompatibleValueInternal -InputObject $item -ReferencePath $ReferencePath
+                if ($null -ne $item -and $null -eq $convertedItem) {
+                    continue
+                }
+
+                $convertedItems += ,$convertedItem
+            }
+
+            return ,([object[]]$convertedItems)
         }
 
-        return [pscustomobject]$convertedObject
-    }
+        if ($InputObject -is [System.Collections.IDictionary]) {
+            $convertedMap = [ordered]@{}
+            foreach ($key in $InputObject.Keys) {
+                $rawValue = $InputObject[$key]
+                $convertedValue = Convert-ToPartnerCenterJsonCompatibleValueInternal -InputObject $rawValue -ReferencePath $ReferencePath
+                if ($null -ne $rawValue -and $null -eq $convertedValue) {
+                    continue
+                }
 
-    return $InputObject
+                $convertedMap[[string]$key] = $convertedValue
+            }
+
+            return [pscustomobject]$convertedMap
+        }
+
+        $propertyNames = @($InputObject.PSObject.Properties | ForEach-Object { $_.Name })
+        if ($propertyNames.Count -gt 0) {
+            $convertedObject = [ordered]@{}
+            foreach ($propertyName in $propertyNames) {
+                $rawValue = $InputObject.PSObject.Properties[$propertyName].Value
+                $convertedValue = Convert-ToPartnerCenterJsonCompatibleValueInternal -InputObject $rawValue -ReferencePath $ReferencePath
+                if ($null -ne $rawValue -and $null -eq $convertedValue) {
+                    continue
+                }
+
+                $convertedObject[$propertyName] = $convertedValue
+            }
+
+            return [pscustomobject]$convertedObject
+        }
+
+        return $InputObject
+    }
+    finally {
+        $ReferencePath.RemoveAt($ReferencePath.Count - 1)
+    }
 }
 
 function Set-OptionalObjectPropertyValue {

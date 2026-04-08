@@ -306,6 +306,34 @@ public class SubmitPartnerCenterFlightScriptTests
     }
 
     [Fact]
+    public void SubmitPartnerCenterFlightScript_ProductionSubmit_OmitsCyclicPublishedSubmissionProperties()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
+        var packagePath = Path.Combine(root, "NWSHelper-1.2.3.0.msix");
+        var evidencePath = Path.Combine(root, "evidence", "partner-center-production-cyclic-submission.json");
+
+        Directory.CreateDirectory(root);
+        WriteTestMsix(packagePath, identityName: "NWSHelper.NWSHelper", publisher: "CN=NWS Helper", version: "1.2.3.0");
+
+        try
+        {
+            var output = RunPowerShellBootstrap(BuildProductionSubmissionCyclicPricingBootstrap(packagePath, evidencePath));
+
+            Assert.Equal("SubmissionCommitted", output["Status"]);
+            Assert.Equal("Production", output["SubmissionTarget"]);
+            Assert.Equal("submission-production-cyclic", output["SubmissionId"]);
+            Assert.Equal("PreProcessing", output["SubmissionStatus"]);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void SubmitPartnerCenterFlightScript_ProductionSubmit_RetriesTransientGatewayTimeout()
     {
         var root = Path.Combine(Path.GetTempPath(), "NWSHelperStoreSubmission", Guid.NewGuid().ToString("N"));
@@ -1480,6 +1508,148 @@ Error Info:OriginTimeout
     }
 
     if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-transient/commit') {
+        return [pscustomobject]@{}
+    }
+
+    throw "Unexpected Invoke-RestMethod call: $Method $Uri"
+}
+
+function Invoke-WebRequest {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [string]$InFile,
+        [string]$ContentType,
+        [hashtable]$Headers
+    )
+
+    return [pscustomobject]@{ StatusCode = 201 }
+}
+
+function Start-Sleep {
+    param([int]$Seconds)
+}
+
+& {{ToPowerShellLiteral(scriptPath)}} `
+  -SubmissionTarget Production `
+  -ApplicationId public-store-app `
+  -PackagePath {{ToPowerShellLiteral(packagePath)}} `
+  -TenantId tenant-id `
+  -ClientId client-id `
+  -ClientSecret client-secret `
+  -ExpectedPackageIdentityName NWSHelper.NWSHelper `
+  -ExpectedPackagePublisher 'CN=NWS Helper' `
+  -TargetPublishMode Manual `
+  -EvidenceOutputPath {{ToPowerShellLiteral(evidencePath)}} `
+  -StatusPollIntervalSeconds 1 `
+  -CommitStatusTimeoutMinutes 1
+""";
+    }
+
+    private static string BuildProductionSubmissionCyclicPricingBootstrap(string packagePath, string evidencePath)
+    {
+        var scriptPath = Path.Combine(GetRepositoryRoot(), "scripts", "store", "submit-partner-center-flight.ps1");
+
+        return $$"""
+$global:SubmissionGetCount = 0
+
+function Invoke-RestMethod {
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers,
+        [string]$ContentType,
+        $Body
+    )
+
+    if ($Uri -like 'https://login.microsoftonline.com/*/oauth2/token') {
+        return [pscustomobject]@{ access_token = 'test-token' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app') {
+        return [pscustomobject]@{
+            lastPublishedApplicationSubmission = [pscustomobject]@{ id = 'published-production-cyclic' }
+        }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/published-production-cyclic') {
+        $pricing = [pscustomobject]@{
+            basePrice = 'Free'
+        }
+
+        $pricing | Add-Member -NotePropertyName self -NotePropertyValue $pricing
+
+        return [pscustomobject]@{
+            id = 'published-production-cyclic'
+            pricing = $pricing
+            listings = [pscustomobject]@{
+                'en-us' = [pscustomobject]@{
+                    baseListing = [pscustomobject]@{
+                        title = 'NWS Helper'
+                    }
+                }
+            }
+            applicationPackages = @(
+                [pscustomobject]@{
+                    id = '2000000000093982103'
+                    fileName = 'NWSHelper-1.0.41.0.msix'
+                    fileStatus = 'Uploaded'
+                    minimumDirectXVersion = 'None'
+                    minimumSystemRam = 'None'
+                }
+            )
+        }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions') {
+        $request = $Body | ConvertFrom-Json
+
+        if ($null -eq $request.pricing -or [string]$request.pricing.basePrice -ne 'Free') {
+            throw 'Expected production create payload to preserve pricing when published submission contains a self reference.'
+        }
+
+        if ($null -ne $request.pricing.PSObject.Properties['self']) {
+            throw 'Expected production create payload to omit cyclic pricing references.'
+        }
+
+        return [pscustomobject]@{ id = 'submission-production-cyclic' }
+    }
+
+    if ($Method -eq 'Get' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-cyclic') {
+        $global:SubmissionGetCount++
+
+        if ($global:SubmissionGetCount -eq 1) {
+            return [pscustomobject]@{
+                id = 'submission-production-cyclic'
+                fileUploadUrl = 'https://example.invalid/upload'
+                applicationPackages = @()
+                listings = @()
+                targetPublishMode = 'Manual'
+                targetPublishDate = $null
+                notesForCertification = ''
+                status = 'PendingCommit'
+                statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+            }
+        }
+
+        return [pscustomobject]@{
+            id = 'submission-production-cyclic'
+            status = 'PreProcessing'
+            statusDetails = [pscustomobject]@{ errors = @(); warnings = @() }
+        }
+    }
+
+    if ($Method -eq 'Put' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-cyclic') {
+        $request = $Body | ConvertFrom-Json
+
+        if (@($request.applicationPackages).Count -ne 2) {
+            throw 'Expected production update payload to include the published package and the new pending-upload package.'
+        }
+
+        return [pscustomobject]@{ id = 'submission-production-cyclic' }
+    }
+
+    if ($Method -eq 'Post' -and $Uri -eq 'https://manage.devcenter.microsoft.com/v1.0/my/applications/public-store-app/submissions/submission-production-cyclic/commit') {
         return [pscustomobject]@{}
     }
 

@@ -61,3 +61,4 @@ tools/penpot-mcp/
 artifacts/
 supabase/.temp/
 temp/
+NWSHelper.Gui/datasets/**/*
