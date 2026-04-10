@@ -509,6 +509,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool HasUnlimitedAddressesAddOn => EffectiveEntitlementSnapshot.HasUnlimitedAddressesAddOn;
 
+    public bool CanBrowseUnlimitedAddressesInStore => IsStoreInstall && !HasUnlimitedAddressesAddOn;
+
+    public bool ShowUnlimitedAddressesCapCallToAction => CanBrowseUnlimitedAddressesInStore && HasCappedOutputMessage;
+
+    public bool ShowUnlimitedAddressesSettingsCallToAction => CanBrowseUnlimitedAddressesInStore;
+
     public bool HasStoreAddOnOffers => StoreAddOnOffers.Count > 0;
 
     public bool CanConfigureAutoUpdatePolicy => !IsStoreInstall;
@@ -571,12 +577,16 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnCappedOutputMessageChanged(string value)
     {
         OnPropertyChanged(nameof(HasCappedOutputMessage));
+        OnPropertyChanged(nameof(ShowUnlimitedAddressesCapCallToAction));
     }
 
     partial void OnIsStoreInstallChanged(bool value)
     {
         OnPropertyChanged(nameof(CanConfigureAutoUpdatePolicy));
         OnPropertyChanged(nameof(CanRefreshStoreAddOnCatalog));
+        OnPropertyChanged(nameof(CanBrowseUnlimitedAddressesInStore));
+        OnPropertyChanged(nameof(ShowUnlimitedAddressesCapCallToAction));
+        OnPropertyChanged(nameof(ShowUnlimitedAddressesSettingsCallToAction));
         OnPropertyChanged(nameof(CanRestoreStorePurchase));
         OnPropertyChanged(nameof(CanExportSupportDiagnostics));
         OnPropertyChanged(nameof(ShowStoreRestoreRequiresSignInHint));
@@ -963,6 +973,19 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsActivatingEntitlement = false;
         }
+    }
+
+    [RelayCommand]
+    private async Task BrowseUnlimitedAddressesAddOnAsync()
+    {
+        if (!CanBrowseUnlimitedAddressesInStore)
+        {
+            StatusMessage = GetDefaultStoreAddOnCatalogMessage();
+            return;
+        }
+
+        EnterSettingsStage();
+        await EnsureStoreAddOnCatalogLoadedAsync();
     }
 
     [RelayCommand]
@@ -2369,6 +2392,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 : "Free tier active.";
 
         OnPropertyChanged(nameof(HasUnlimitedAddressesAddOn));
+        OnPropertyChanged(nameof(CanBrowseUnlimitedAddressesInStore));
+        OnPropertyChanged(nameof(ShowUnlimitedAddressesCapCallToAction));
+        OnPropertyChanged(nameof(ShowUnlimitedAddressesSettingsCallToAction));
         UpdateAccountLinkDisplay();
     }
 
@@ -3402,4 +3428,3 @@ public partial class MainWindowViewModel : ViewModelBase
         return leftDigits.Length.CompareTo(rightDigits.Length);
     }
 }
-
