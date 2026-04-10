@@ -59,7 +59,7 @@ public class GuidanceWorkflowTests
 
         Assert.Contains("IsExpanded=\"{Binding IsSetupGuidanceExpanded, Mode=TwoWay}\"", setupMarkup, StringComparison.Ordinal);
         Assert.Contains("How to use this with your territory app", setupMarkup, StringComparison.Ordinal);
-        Assert.Contains("Recommended: Do specify your exported Territory Addresses file or existing statuses and notes will be lost if actually present in the system.", setupMarkup, StringComparison.Ordinal);
+        Assert.Contains("Recommended: Do specify your exported Territory Addresses file or existing statuses and notes will be lost if already present in the system.", setupMarkup, StringComparison.Ordinal);
 
         Assert.Contains("IsExpanded=\"{Binding IsResultsGuidanceExpanded, Mode=TwoWay}\"", resultsMarkup, StringComparison.Ordinal);
         Assert.Contains("Next step: ensure you have a backup in your territory app and then import from here back into your territory app", resultsMarkup, StringComparison.Ordinal);

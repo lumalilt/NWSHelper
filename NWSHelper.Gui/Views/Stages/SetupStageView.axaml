@@ -50,7 +50,7 @@
                                 </StackPanel>
                             </Border>
                         </Expander>
-                        <Grid ColumnDefinitions="240,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
+                        <Grid ColumnDefinitions="240,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
                             <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="Territories CSV *" />
                                 <TextBlock Classes="info-marker" ToolTip.Tip="Required territories boundary CSV file to find new addresses inside of." />
@@ -62,20 +62,54 @@
                                 <TextBlock Text="Existing Territory Addresses CSV" />
                                 <TextBlock Classes="info-marker" ToolTip.Tip="Optional exported Territory Addresses CSV used to merge new addresses and preserve existing statuses and notes." />
                             </StackPanel>
-                            <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
-                                <TextBox Text="{Binding ExistingAddressesCsvPath, Mode=TwoWay}" Watermark="Optional path to exported Territory Addresses CSV" />
-                                <TextBlock Text="Recommended: Do specify your exported Territory Addresses file or existing statuses and notes will be lost if actually present in the system."
-                                           FontSize="11"
-                                           Opacity="0.78"
-                                           TextWrapping="Wrap" />
+                            <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Spacing="4">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+                                    <TextBox Grid.Column="0" Text="{Binding ExistingAddressesCsvPath, Mode=TwoWay}" Watermark="Optional path to exported Territory Addresses CSV" />
+                                    <Button Grid.Column="1" Content="Browse..." Click="OnBrowseExistingCsvClick" ToolTip.Tip="Browse for existing territory addresses CSV file" VerticalAlignment="Top" />
+                                    <CheckBox Grid.Column="2" IsChecked="{Binding NoPrompt, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Don't require all existing" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Run despite territory/ies w/o existing addresses in input" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox Grid.Column="3" IsChecked="{Binding ForceWithoutAddressInput, Mode=TwoWay}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Force without address input" />
+                                            <TextBlock Classes="info-marker" ToolTip.Tip="Allow extraction even when pre-existing address input is missing." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                </Grid>
                             </StackPanel>
-                            <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Click="OnBrowseExistingCsvClick" ToolTip.Tip="Browse for existing territory addresses CSV file" VerticalAlignment="Top" />
 
-                            <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="New Addresses Dataset Provider *" />
-                                <TextBlock Classes="info-marker" ToolTip.Tip="Dataset provider used for listing/downloading datasets of new addresses to add." />
+                            <TextBlock Grid.Row="2"
+                                       Grid.Column="0"
+                                       Grid.ColumnSpan="3"
+                                       Text="Recommended: Do specify your exported Territory Addresses file or existing statuses and notes will be lost if already present in the system."
+                                       FontSize="11"
+                                       Opacity="0.78"
+                                       TextWrapping="Wrap" />
+
+                            <StackPanel Grid.Row="3" Grid.Column="0" Spacing="4" VerticalAlignment="Top">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="New Addresses Dataset Provider *" />
+                                    <TextBlock Classes="info-marker" ToolTip.Tip="Dataset provider used for listing/downloading datasets of new addresses to add." />
+                                </StackPanel>
+                                <ProgressBar Minimum="0"
+                                             Maximum="100"
+                                             Height="4"
+                                             Width="220"
+                                             HorizontalAlignment="Left"
+                                             IsVisible="{Binding IsDatasetDownloadInProgress}"
+                                             Value="{Binding DatasetDownloadPercent}" />
+                                <TextBlock FontSize="11"
+                                           Opacity="0.8"
+                                           Width="220"
+                                           HorizontalAlignment="Left"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding HasDatasetDownloadMessage}"
+                                           Text="{Binding DatasetDownloadMessage}" />
                             </StackPanel>
-                            <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4">
+                            <StackPanel Grid.Row="3" Grid.Column="1" Spacing="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <ComboBox Width="260"
                                               SelectedValue="{Binding SelectedDatasetProviderId, Mode=TwoWay}"
@@ -136,34 +170,23 @@
                                             </Flyout>
                                         </Button.Flyout>
                                     </Button>
-
                                 </StackPanel>
-
-                                <ProgressBar Minimum="0"
-                                             Maximum="100"
-                                             Height="4"
-                                             IsVisible="{Binding IsDatasetDownloadInProgress}"
-                                             Value="{Binding DatasetDownloadPercent}" />
-                                <TextBlock FontSize="11"
-                                           Opacity="0.8"
-                                           IsVisible="{Binding HasDatasetDownloadMessage}"
-                                           Text="{Binding DatasetDownloadMessage}" />
                             </StackPanel>
 
-                            <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="Dataset Root *" />
                                 <TextBlock Classes="info-marker" ToolTip.Tip="Required folder that contains datasets for the selected provider." />
                             </StackPanel>
-                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding DatasetRootPath, Mode=TwoWay}" />
-                            <Button Grid.Row="3" Grid.Column="2" Content="Browse..." Click="OnBrowseDatasetRootClick" ToolTip.Tip="Browse for dataset root folder" VerticalAlignment="Top" />
+                            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding DatasetRootPath, Mode=TwoWay}" />
+                            <Button Grid.Row="4" Grid.Column="2" Content="Browse..." Click="OnBrowseDatasetRootClick" ToolTip.Tip="Browse for dataset root folder" VerticalAlignment="Top" />
 
-                            <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="States/Counties to Use" />
                                 <TextBlock Classes="info-marker" ToolTip.Tip="Comma-separated state or state:county filters for new address CSV files to use for adding addresses (example: MD, MD:baltimore_county)." />
                             </StackPanel>
-                            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding StatesFilter, Mode=TwoWay}" />
+                            <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding StatesFilter, Mode=TwoWay}" />
                             <Button x:Name="StatesFilterSelectorButton"
-                                    Grid.Row="4"
+                                    Grid.Row="5"
                                     Grid.Column="2"
                                     Width="{Binding ElementName=BoundaryCsvBrowseButton, Path=Bounds.Width}"
                                     Content="Select..."
@@ -287,12 +310,6 @@
                                             <TextBlock Classes="info-marker" ToolTip.Tip="Write additional output files grouped by address category." />
                                         </StackPanel>
                                     </CheckBox>
-                                    <CheckBox IsChecked="{Binding NoPrompt, Mode=TwoWay}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Don't require all existing" />
-                                            <TextBlock Classes="info-marker" ToolTip.Tip="Run despite territory/ies w/o existing addresses in input" />
-                                        </StackPanel>
-                                    </CheckBox>
                                     <CheckBox IsChecked="{Binding SmartSelect, Mode=TwoWay}">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="Smart-select defaults" />
@@ -370,12 +387,6 @@
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="Preserve raw street" />
                                             <TextBlock Classes="info-marker" ToolTip.Tip="Do not normalize street values." />
-                                        </StackPanel>
-                                    </CheckBox>
-                                    <CheckBox IsChecked="{Binding ForceWithoutAddressInput, Mode=TwoWay}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Force without address input" />
-                                            <TextBlock Classes="info-marker" ToolTip.Tip="Allow extraction even when pre-existing address input is missing." />
                                         </StackPanel>
                                     </CheckBox>
                                 </WrapPanel>
