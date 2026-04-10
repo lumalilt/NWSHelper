@@ -35,10 +35,10 @@
                         Background="{DynamicResource ThemeSurfaceMidBrush}"
                         IsVisible="{Binding ShowUnlimitedAddressesCapCallToAction}">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="Need more than the free-tier cap? Unlimited Addresses removes the per-territory new-address limit for this Store install."
+                        <TextBlock Text="Need more than the free-tier cap? The Unlimited Addresses add-on removes the per-territory new-address limit for this Store install."
                                    TextWrapping="Wrap" />
                         <Button HorizontalAlignment="Left"
-                                Content="Browse Unlimited Addresses"
+                                Content="🔓 View Available Add-ons"
                                 Command="{Binding BrowseUnlimitedAddressesAddOnCommand}"
                                 ToolTip.Tip="Open Settings and load Microsoft Store add-ons for this install" />
                     </StackPanel>

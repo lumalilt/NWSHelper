@@ -225,11 +225,16 @@ public class StoreAddOnCatalogViewModelTests
 
         Assert.Contains("ShowUnlimitedAddressesCapCallToAction", previewMarkup, StringComparison.Ordinal);
         Assert.Contains("BrowseUnlimitedAddressesAddOnCommand", previewMarkup, StringComparison.Ordinal);
+        Assert.Contains("🔓 View Available Add-ons", previewMarkup, StringComparison.Ordinal);
+        Assert.Contains("Unlimited Addresses add-on", previewMarkup, StringComparison.Ordinal);
         Assert.Contains("ShowUnlimitedAddressesCapCallToAction", resultsMarkup, StringComparison.Ordinal);
         Assert.Contains("BrowseUnlimitedAddressesAddOnCommand", resultsMarkup, StringComparison.Ordinal);
+        Assert.Contains("🔓 View Available Add-ons", resultsMarkup, StringComparison.Ordinal);
+        Assert.Contains("Unlimited Addresses add-on", resultsMarkup, StringComparison.Ordinal);
         Assert.Contains("Microsoft Store Add-Ons", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("ShowUnlimitedAddressesSettingsCallToAction", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("BrowseUnlimitedAddressesAddOnCommand", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("🔓 View Available Add-ons", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("RefreshStoreAddOnCatalogCommand", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("PurchaseStoreAddOnCommand", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreAddOnOffers", settingsMarkup, StringComparison.Ordinal);
