@@ -38,9 +38,14 @@
                         <TextBlock Text="Need more than the free-tier cap? The Unlimited Addresses add-on removes the per-territory new-address limit for this Store install."
                                    TextWrapping="Wrap" />
                         <Button HorizontalAlignment="Left"
-                                Content="🔓 View Available Add-ons"
+                                AutomationProperties.Name="View Available Add-ons"
                                 Command="{Binding BrowseUnlimitedAddressesAddOnCommand}"
-                                ToolTip.Tip="Open Settings and load Microsoft Store add-ons for this install" />
+                                ToolTip.Tip="Open Settings and load Microsoft Store add-ons for this install">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="🔓" />
+                                <TextBlock Text="View Available Add-ons" />
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                 </Border>
 
