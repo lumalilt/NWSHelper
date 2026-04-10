@@ -155,18 +155,87 @@ public class StoreAddOnCatalogViewModelTests
     }
 
     [Fact]
+    public async Task BrowseUnlimitedAddressesAddOn_WhenCapApplies_OpensSettingsAndLoadsStoreOffers()
+    {
+        var catalogService = new FakeStoreAddOnCatalogService
+        {
+            CatalogResult = StoreAddOnCatalogResult.CreateAvailable(
+            [
+                new StoreAddOnOffer
+                {
+                    StoreId = "9TEST0000001",
+                    InAppOfferToken = "unlimited_addresses",
+                    Title = "Unlimited Addresses",
+                    Description = "Remove the new-address cap.",
+                    PriceText = "$19.99",
+                    IsOwned = false
+                }
+            ],
+            "1 Microsoft Store add-on is available for this install.")
+        };
+
+        var viewModel = CreateViewModel(
+            updateService: new FakeUpdateService { IsStoreInstall = true },
+            storeAddOnCatalogService: catalogService);
+        viewModel.CurrentStage = WorkflowStage.Preview;
+        viewModel.CappedOutputMessage = "Entitlement cap applied.";
+
+        Assert.True(viewModel.ShowUnlimitedAddressesCapCallToAction);
+
+        await viewModel.BrowseUnlimitedAddressesAddOnCommand.ExecuteAsync(null);
+
+        Assert.Equal(WorkflowStage.Settings, viewModel.CurrentStage);
+        Assert.True(viewModel.HasStoreAddOnOffers);
+        Assert.Equal(1, catalogService.GetCatalogCalls);
+    }
+
+    [Fact]
+    public void UnlimitedAddressesCallToAction_HidesWhenEntitlementAlreadyActive()
+    {
+        var entitlementService = new FakeEntitlementService
+        {
+            Snapshot = new EntitlementSnapshot
+            {
+                BasePlanCode = EntitlementProductCodes.FreeBasePlan,
+                AddOnCodes = [EntitlementProductCodes.UnlimitedAddressesAddOn],
+                MaxNewAddressesPerTerritory = null,
+                LastValidatedUtc = DateTimeOffset.UtcNow,
+                ValidationSource = "Test"
+            }
+        };
+
+        var viewModel = CreateViewModel(
+            entitlementService: entitlementService,
+            updateService: new FakeUpdateService { IsStoreInstall = true });
+        viewModel.CappedOutputMessage = "Entitlement cap applied.";
+
+        Assert.False(viewModel.CanBrowseUnlimitedAddressesInStore);
+        Assert.False(viewModel.ShowUnlimitedAddressesCapCallToAction);
+        Assert.False(viewModel.ShowUnlimitedAddressesSettingsCallToAction);
+    }
+
+    [Fact]
     public void PublicGuiMarkup_ContainsStoreAddOnCatalogBindings()
     {
+        var previewMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "PreviewStageView.axaml"));
+        var resultsMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "ResultsStageView.axaml"));
         var settingsMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "SettingsStageView.axaml"));
         var appBootstrap = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "App.axaml.cs"));
         var viewModelCode = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "ViewModels", "MainWindowViewModel.cs"));
 
+        Assert.Contains("ShowUnlimitedAddressesCapCallToAction", previewMarkup, StringComparison.Ordinal);
+        Assert.Contains("BrowseUnlimitedAddressesAddOnCommand", previewMarkup, StringComparison.Ordinal);
+        Assert.Contains("ShowUnlimitedAddressesCapCallToAction", resultsMarkup, StringComparison.Ordinal);
+        Assert.Contains("BrowseUnlimitedAddressesAddOnCommand", resultsMarkup, StringComparison.Ordinal);
         Assert.Contains("Microsoft Store Add-Ons", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("ShowUnlimitedAddressesSettingsCallToAction", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("BrowseUnlimitedAddressesAddOnCommand", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("RefreshStoreAddOnCatalogCommand", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("PurchaseStoreAddOnCommand", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreAddOnOffers", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreAddOnCatalogServiceFactory.CreateDefault", appBootstrap, StringComparison.Ordinal);
         Assert.Contains("PurchaseStoreAddOnAsync", viewModelCode, StringComparison.Ordinal);
+        Assert.Contains("BrowseUnlimitedAddressesAddOnAsync", viewModelCode, StringComparison.Ordinal);
     }
 
     private static MainWindowViewModel CreateViewModel(

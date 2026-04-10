@@ -63,6 +63,20 @@
                             Background="{DynamicResource CardBackgroundBrush}">
                         <TextBlock Text="{Binding CappedOutputMessage}" TextWrapping="Wrap" />
                     </Border>
+                    <Border IsVisible="{Binding ShowUnlimitedAddressesCapCallToAction}"
+                            Padding="10"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource CardBorderBrush}"
+                            Background="{DynamicResource ThemeSurfaceMidBrush}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Need to write more new addresses next time? Unlimited Addresses removes the free-tier cap for this Store install."
+                                       TextWrapping="Wrap" />
+                            <Button HorizontalAlignment="Left"
+                                    Content="Browse Unlimited Addresses"
+                                    Command="{Binding BrowseUnlimitedAddressesAddOnCommand}"
+                                    ToolTip.Tip="Open Settings and load Microsoft Store add-ons for this install" />
+                        </StackPanel>
+                    </Border>
                     <Grid ColumnDefinitions="*,*,*,*,*" RowDefinitions="Auto,Auto" RowSpacing="8" ColumnSpacing="8">
                         <Border Grid.Row="0" Grid.Column="0" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Existing"/><TextBlock FontSize="20" Text="{Binding ExistingTotal}"/></StackPanel></Border>
                         <Border Grid.Row="0" Grid.Column="1" BorderBrush="{DynamicResource MetricBorderBrush}" BorderThickness="1" Padding="8"><StackPanel><TextBlock Text="Found"/><TextBlock FontSize="20" Text="{Binding FoundTotal}"/></StackPanel></Border>
