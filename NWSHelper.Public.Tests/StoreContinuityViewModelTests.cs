@@ -492,7 +492,7 @@ public class StoreContinuityViewModelTests
         Assert.Contains("store-continuity-prompt", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreContinuityPromptBackgroundBrush", appMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreContinuityAttentionRequestId", settingsCodeBehind, StringComparison.Ordinal);
-        Assert.Contains("DeveloperSettingsChordPressesRequired = 6", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("DeveloperSettingsChordPressesRequired = 7", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("RevealDeveloperSettingsAsync", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("Key.G", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("handledEventsToo: true", settingsCodeBehind, StringComparison.Ordinal);

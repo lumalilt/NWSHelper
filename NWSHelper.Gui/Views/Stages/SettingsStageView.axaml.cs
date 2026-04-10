@@ -13,7 +13,7 @@ namespace NWSHelper.Gui.Views.Stages;
 
 public partial class SettingsStageView : UserControl
 {
-    private const int DeveloperSettingsChordPressesRequired = 6;
+    private const int DeveloperSettingsChordPressesRequired = 7;
     private static readonly TimeSpan DeveloperSettingsChordResetWindow = TimeSpan.FromSeconds(2.5);
 
     private MainWindowViewModel? observedViewModel;
