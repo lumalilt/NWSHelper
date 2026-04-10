@@ -69,10 +69,10 @@
                             BorderBrush="{DynamicResource CardBorderBrush}"
                             Background="{DynamicResource ThemeSurfaceMidBrush}">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="Need to write more new addresses next time? Unlimited Addresses removes the free-tier cap for this Store install."
+                            <TextBlock Text="Need to write more new addresses next time? The Unlimited Addresses add-on removes the free-tier cap for this Store install."
                                        TextWrapping="Wrap" />
                             <Button HorizontalAlignment="Left"
-                                    Content="Browse Unlimited Addresses"
+                                    Content="🔓 View Available Add-ons"
                                     Command="{Binding BrowseUnlimitedAddressesAddOnCommand}"
                                     ToolTip.Tip="Open Settings and load Microsoft Store add-ons for this install" />
                         </StackPanel>
