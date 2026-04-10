@@ -84,6 +84,8 @@ public sealed class GuiSetupSettings
 
     public bool EnableMapAddressPointDeduplication { get; set; } = true;
 
+    public bool IgnoreUnlimitedAddressesEntitlement { get; set; }
+
     public bool IsSetupGuidanceExpanded { get; set; } = true;
 
     public bool IsResultsGuidanceExpanded { get; set; } = true;

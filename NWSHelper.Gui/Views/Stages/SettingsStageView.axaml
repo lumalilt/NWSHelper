@@ -367,6 +367,21 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button Content="Reset Setup Defaults" Command="{Binding ResetSetupDefaultsCommand}" ToolTip.Tip="Restore setup fields and options to defaults" />
                     </StackPanel>
+
+                    <Separator />
+
+                    <StackPanel x:Name="DeveloperSettingsSection"
+                                Spacing="8"
+                                Margin="0,4,0,0"
+                                IsVisible="False">
+                        <TextBlock Text="Developer Settings" FontSize="16" FontWeight="SemiBold" />
+                        <TextBlock Text="Internal overrides for validating premium purchase and entitlement UX." />
+                        <CheckBox x:Name="IgnoreUnlimitedAddressesEntitlementCheckBox"
+                                  IsChecked="{Binding IgnoreUnlimitedAddressesEntitlement, Mode=TwoWay}"
+                                  Content="Ignore Unlimited Addresses entitlement" />
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="When enabled, NWSHelper behaves as if Unlimited Addresses is not active so premium upgrade prompts and free-tier CTA flows can be tested." />
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </StackPanel>

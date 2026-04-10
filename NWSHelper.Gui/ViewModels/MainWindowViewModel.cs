@@ -85,6 +85,7 @@ public partial class MainWindowViewModel : ViewModelBase
         nameof(EnableMapRenderItemReuse),
         nameof(MapTileCacheLifeDays),
         nameof(EnableMapAddressPointDeduplication),
+        nameof(IgnoreUnlimitedAddressesEntitlement),
         nameof(IsSetupGuidanceExpanded),
         nameof(IsResultsGuidanceExpanded),
         nameof(IsOptionsExpanded)
@@ -209,6 +210,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool enableMapAddressPointDeduplication = true;
+
+    [ObservableProperty]
+    private bool ignoreUnlimitedAddressesEntitlement;
 
     [ObservableProperty]
     private bool isSetupGuidanceExpanded = true;
@@ -503,7 +507,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool HasCappedOutputMessage => !string.IsNullOrWhiteSpace(CappedOutputMessage);
 
-    public bool HasUnlimitedAddressesAddOn => activeEntitlementSnapshot.HasUnlimitedAddressesAddOn;
+    public bool HasUnlimitedAddressesAddOn => EffectiveEntitlementSnapshot.HasUnlimitedAddressesAddOn;
 
     public bool HasStoreAddOnOffers => StoreAddOnOffers.Count > 0;
 
@@ -681,6 +685,11 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnEnableMapAddressPointDeduplicationChanged(bool value)
     {
         OutputMapPreviewViewModel.EnableAddressPointDeduplication = value;
+    }
+
+    partial void OnIgnoreUnlimitedAddressesEntitlementChanged(bool value)
+    {
+        ApplyEntitlementSnapshot(activeEntitlementSnapshot);
     }
 
     partial void OnSelectedDatasetProviderIdChanged(string value)
@@ -2194,6 +2203,7 @@ public partial class MainWindowViewModel : ViewModelBase
         EnableMapRenderItemReuse = settings.EnableMapRenderItemReuse;
         MapTileCacheLifeDays = settings.MapTileCacheLifeDays;
         EnableMapAddressPointDeduplication = settings.EnableMapAddressPointDeduplication;
+        IgnoreUnlimitedAddressesEntitlement = settings.IgnoreUnlimitedAddressesEntitlement;
         IsSetupGuidanceExpanded = settings.IsSetupGuidanceExpanded;
         IsResultsGuidanceExpanded = settings.IsResultsGuidanceExpanded;
         IsOptionsExpanded = settings.IsOptionsExpanded;
@@ -2297,30 +2307,62 @@ public partial class MainWindowViewModel : ViewModelBase
             EnableMapRenderItemReuse = EnableMapRenderItemReuse,
             MapTileCacheLifeDays = MapTileCacheLifeDays,
             EnableMapAddressPointDeduplication = EnableMapAddressPointDeduplication,
+            IgnoreUnlimitedAddressesEntitlement = IgnoreUnlimitedAddressesEntitlement,
             IsSetupGuidanceExpanded = IsSetupGuidanceExpanded,
             IsResultsGuidanceExpanded = IsResultsGuidanceExpanded,
             IsOptionsExpanded = IsOptionsExpanded
         });
     }
 
+    private EntitlementSnapshot EffectiveEntitlementSnapshot => CreateEffectiveEntitlementSnapshot(activeEntitlementSnapshot);
+
+    private EntitlementSnapshot CreateEffectiveEntitlementSnapshot(EntitlementSnapshot? snapshot)
+    {
+        var resolvedSnapshot = snapshot ?? EntitlementSnapshot.CreateDefaultFree("Fallback");
+        if (!IgnoreUnlimitedAddressesEntitlement || !resolvedSnapshot.HasUnlimitedAddressesAddOn)
+        {
+            return resolvedSnapshot;
+        }
+
+        var filteredAddOnCodes = resolvedSnapshot.AddOnCodes
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Where(code => !string.Equals(code, EntitlementProductCodes.UnlimitedAddressesAddOn, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        return new EntitlementSnapshot
+        {
+            BasePlanCode = string.IsNullOrWhiteSpace(resolvedSnapshot.BasePlanCode)
+                ? EntitlementProductCodes.FreeBasePlan
+                : resolvedSnapshot.BasePlanCode,
+            AddOnCodes = filteredAddOnCodes,
+            MaxNewAddressesPerTerritory = resolvedSnapshot.MaxNewAddressesPerTerritory ?? 30,
+            ExpiresUtc = resolvedSnapshot.ExpiresUtc,
+            LastValidatedUtc = resolvedSnapshot.LastValidatedUtc,
+            ValidationSource = string.IsNullOrWhiteSpace(resolvedSnapshot.ValidationSource)
+                ? "IgnoreUnlimitedAddresses"
+                : $"{resolvedSnapshot.ValidationSource}+IgnoreUnlimitedAddresses"
+        };
+    }
+
     private void ApplyEntitlementSnapshot(EntitlementSnapshot snapshot)
     {
         activeEntitlementSnapshot = snapshot ?? EntitlementSnapshot.CreateDefaultFree("Fallback");
+        var effectiveSnapshot = EffectiveEntitlementSnapshot;
 
-        EntitlementExpired = activeEntitlementSnapshot.IsExpired;
-        EntitlementAddOnLabel = activeEntitlementSnapshot.HasUnlimitedAddressesAddOn
+        EntitlementExpired = effectiveSnapshot.IsExpired;
+        EntitlementAddOnLabel = effectiveSnapshot.HasUnlimitedAddressesAddOn
             ? "Unlimited Addresses"
             : EntitlementExpired
                 ? "Free (Unlimited Addresses expired)"
                 : "Free";
 
-        var freeCap = activeEntitlementSnapshot.MaxNewAddressesPerTerritory
+        var freeCap = effectiveSnapshot.MaxNewAddressesPerTerritory
             ?? 30;
-        EntitlementLimitLabel = activeEntitlementSnapshot.HasUnlimitedAddressesAddOn
+        EntitlementLimitLabel = effectiveSnapshot.HasUnlimitedAddressesAddOn
             ? "Unlimited new addresses / territory"
             : $"{freeCap} new addresses / territory";
 
-        EntitlementStatusMessage = activeEntitlementSnapshot.HasUnlimitedAddressesAddOn
+        EntitlementStatusMessage = effectiveSnapshot.HasUnlimitedAddressesAddOn
             ? "Unlimited Addresses entitlement active"
             : EntitlementExpired
                 ? "Unlimited Addresses entitlement expired. Free-tier cap is active."
@@ -2451,7 +2493,7 @@ public partial class MainWindowViewModel : ViewModelBase
         AccountLinkStatusLabel = activeAccountLinkSnapshot.Status switch
         {
             AccountLinkStateStatus.AwaitingConfirmation => "Check email",
-            AccountLinkStateStatus.Linked when activeEntitlementSnapshot.HasUnlimitedAddressesAddOn => "Unlimited Addresses linked",
+            AccountLinkStateStatus.Linked when HasUnlimitedAddressesAddOn => "Unlimited Addresses linked",
             AccountLinkStateStatus.Linked => "Linked",
             AccountLinkStateStatus.PendingReview => "Pending review",
             AccountLinkStateStatus.Failed => "Action required",
@@ -2540,13 +2582,13 @@ public partial class MainWindowViewModel : ViewModelBase
         return IsStoreInstall
             && snapshot.Status == AccountLinkStateStatus.Linked
             && string.Equals(snapshot.PurchaseSource, "store", StringComparison.OrdinalIgnoreCase)
-            && !activeEntitlementSnapshot.HasUnlimitedAddressesAddOn;
+            && !HasUnlimitedAddressesAddOn;
     }
 
     private bool ShouldRefreshLinkedAccountEntitlement(AccountLinkSnapshot snapshot)
     {
         return snapshot.Status == AccountLinkStateStatus.Linked
-            && !activeEntitlementSnapshot.HasUnlimitedAddressesAddOn;
+            && !HasUnlimitedAddressesAddOn;
     }
 
     private void RequestStoreContinuityAttention()
@@ -2615,7 +2657,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task<bool> TryApplyLocalStoreOwnershipEntitlementAsync(CancellationToken cancellationToken)
     {
-        if (!IsStoreInstall || activeEntitlementSnapshot.HasUnlimitedAddressesAddOn)
+        if (!IsStoreInstall || HasUnlimitedAddressesAddOn)
         {
             return false;
         }
@@ -2747,7 +2789,7 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectAll = SelectAll,
             NoPrompt = NoPrompt,
             ForceWithoutAddressInput = ForceWithoutAddressInput,
-            EntitlementContext = activeEntitlementSnapshot.ToCoreContext()
+            EntitlementContext = EffectiveEntitlementSnapshot.ToCoreContext()
         };
     }
 

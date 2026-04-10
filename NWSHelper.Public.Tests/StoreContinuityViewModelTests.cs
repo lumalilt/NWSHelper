@@ -133,6 +133,46 @@ public class StoreContinuityViewModelTests
     }
 
     [Fact]
+    public async Task BuildPreview_WhenIgnoreUnlimitedAddressesEntitlementEnabled_UsesFreeTierEvenIfStoreOwnershipIsVerified()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), "nwshelper-store-ignore-unlimited", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            var boundaryPath = Path.Combine(tempDirectory, "Territories.csv");
+            File.WriteAllText(boundaryPath, "placeholder");
+
+            var extractionOrchestrator = new CapturingExtractionOrchestrator();
+            var viewModel = CreateViewModel(
+                extractionOrchestrator: extractionOrchestrator,
+                accountLinkService: new FakeAccountLinkService { Snapshot = AccountLinkSnapshot.CreateSignedOut() },
+                updateService: new FakeUpdateService { IsStoreInstall = true },
+                storeOwnershipVerifier: FakeStoreOwnershipVerifier.VerifiedOwned());
+
+            viewModel.IgnoreUnlimitedAddressesEntitlement = true;
+            viewModel.BoundaryCsvPath = boundaryPath;
+            viewModel.DatasetRootPath = tempDirectory;
+
+            await viewModel.BuildPreviewCommand.ExecuteAsync(null);
+
+            Assert.NotNull(extractionOrchestrator.LastRequest);
+            Assert.NotNull(extractionOrchestrator.LastRequest!.EntitlementContext);
+            Assert.Equal(30, extractionOrchestrator.LastRequest.EntitlementContext!.MaxNewAddressesPerTerritory);
+            Assert.DoesNotContain(EntitlementProductCodes.UnlimitedAddressesAddOn, extractionOrchestrator.LastRequest.EntitlementContext.AddOnCodes);
+            Assert.False(viewModel.HasUnlimitedAddressesAddOn);
+            Assert.Equal("Free", viewModel.EntitlementAddOnLabel);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task BuildPreview_WhenDatasetRootAlreadyPointsAtProviderFolder_NormalizesToBaseRoot()
     {
         var tempDirectory = Path.Combine(Path.GetTempPath(), "nwshelper-provider-root-normalize", Guid.NewGuid().ToString("N"));
@@ -433,6 +473,7 @@ public class StoreContinuityViewModelTests
     {
         var settingsMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "SettingsStageView.axaml"));
         var settingsCodeBehind = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "Stages", "SettingsStageView.axaml.cs"));
+        var viewModelCode = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "ViewModels", "MainWindowViewModel.cs"));
         var appMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "App.axaml"));
         var mainWindowMarkup = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "MainWindow.axaml"));
         var mainWindowCodeBehind = File.ReadAllText(Path.Combine(GetRepositoryRoot(), "NWSHelper.Gui", "Views", "MainWindow.axaml.cs"));
@@ -445,11 +486,21 @@ public class StoreContinuityViewModelTests
         Assert.Contains("StoreContinuityPromptBanner", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("AccountLinkSection", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("AccountLinkEmailTextBox", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("Developer Settings", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("IgnoreUnlimitedAddressesEntitlementCheckBox", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("IgnoreUnlimitedAddressesEntitlement", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("store-continuity-prompt", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreContinuityPromptBackgroundBrush", appMarkup, StringComparison.Ordinal);
         Assert.Contains("StoreContinuityAttentionRequestId", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("DeveloperSettingsChordPressesRequired = 6", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("RevealDeveloperSettingsAsync", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("Key.G", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("handledEventsToo: true", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("Loaded += OnLoaded", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("Unloaded += OnUnloaded", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("BringIntoView", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("PulseStoreContinuityPromptAsync", settingsCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("IgnoreUnlimitedAddressesEntitlement", viewModelCode, StringComparison.Ordinal);
         Assert.Contains("OpenSupportLinkCommand", mainWindowMarkup, StringComparison.Ordinal);
         Assert.Contains("ToolTip.Tip=\"Support\"", mainWindowMarkup, StringComparison.Ordinal);
         Assert.True(mainWindowMarkup.IndexOf("OpenSupportLinkCommand", StringComparison.Ordinal) < mainWindowMarkup.LastIndexOf("GoToSettingsCommand", StringComparison.Ordinal));
