@@ -1,5 +1,7 @@
 # NWS Helper
 
+> Note: Please update to the latest version of NWS Helper or download from the [Windows Store](https://apps.microsoft.com/detail/9ppkpp8r8865) and then visit the Settings > Microsoft Store Add-Ons section to obtain the unlimited addresses add-on via the Windows Store version for now while we work on a more seamless in-app purchase experience for the direct download version here. This will allow you to move from testing with the free version to having unlimited addresses. Thanks!
+
 Public UI code and support for NWS Helper - a tool to automatically populate and enhance territory addresses in NWS Desktop... and more! Unofficial utilities for JWs working with NW Scheduler / NWS Desktop / NWS Mobile (NOTE: Not affliated with these). Automatically populate & improve territory addresses & more!
 
 ## Features
