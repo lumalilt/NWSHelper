@@ -35,6 +35,19 @@
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
+        <Style Selector="Button.header-update">
+            <Setter Property="MinWidth" Value="68" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="12,2" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Background" Value="{DynamicResource StageNavActiveBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource StageNavActiveForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
         <Style Selector="Button.stage-nav.active">
             <Setter Property="Background" Value="{DynamicResource StageNavActiveBackgroundBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource StageNavActiveForegroundBrush}" />
@@ -56,6 +69,13 @@
                             Spacing="8"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center">
+                    <Button Classes="header-update"
+                        Content="Update"
+                        Command="{Binding ApplyAvailableUpdateCommand}"
+                        IsVisible="{Binding ShowHeaderUpdateButton}"
+                        ToolTip.Tip="{Binding UpdateButtonToolTip}"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center" />
                     <Button Classes="header-icon"
                             Command="{Binding OpenSupportLinkCommand}"
                             ToolTip.Tip="Support"

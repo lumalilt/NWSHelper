@@ -92,6 +92,7 @@ public partial class MainWindowViewModel : ViewModelBase
         nameof(EnableMapAddressPointDeduplication),
         nameof(IgnoreUnlimitedAddressesEntitlement),
         nameof(SimulateStoreInstallForUiTesting),
+        nameof(UpdateVersionOverrideForTesting),
         nameof(IsSetupGuidanceExpanded),
         nameof(IsResultsGuidanceExpanded),
         nameof(IsOptionsExpanded)
@@ -224,6 +225,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool simulateStoreInstallForUiTesting;
 
     [ObservableProperty]
+    private string updateVersionOverrideForTesting = string.Empty;
+
+    [ObservableProperty]
     private bool isSetupGuidanceExpanded = true;
 
     [ObservableProperty]
@@ -303,6 +307,18 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private string updateStatusMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool isUpdateAvailable;
+
+    [ObservableProperty]
+    private bool isUpdateInstallerReady;
+
+    [ObservableProperty]
+    private string availableUpdateVersion = string.Empty;
+
+    [ObservableProperty]
+    private bool isApplyingAvailableUpdate;
 
     [ObservableProperty]
     private string storeRuntimeChannelLabel = StoreRuntimeDiagnosticNonStoreLabel;
@@ -572,6 +588,20 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool CanConfigureAutoUpdatePolicy => !IsStoreInstall;
 
+    public bool HasUpdateVersionOverrideForTesting => !string.IsNullOrWhiteSpace(UpdateVersionOverrideForTesting);
+
+    public bool ShowHeaderUpdateButton => IsUpdateAvailable && !IsStoreInstall;
+
+    public bool CanApplyAvailableUpdate => ShowHeaderUpdateButton && !IsCheckingForUpdates && !IsApplyingAvailableUpdate;
+
+    public string UpdateButtonToolTip => IsUpdateInstallerReady
+        ? !string.IsNullOrWhiteSpace(AvailableUpdateVersion)
+            ? $"Install downloaded update {AvailableUpdateVersion}"
+            : "Install downloaded update"
+        : !string.IsNullOrWhiteSpace(AvailableUpdateVersion)
+            ? $"Download and install update {AvailableUpdateVersion}"
+            : "Download and install the available update";
+
     public bool CanRefreshStoreAddOnCatalog => IsStoreInstall && !IsLoadingStoreAddOns && !IsPurchasingStoreAddOn;
 
     public bool CanStartAccountSignIn => !IsAccountLinkBusy;
@@ -637,6 +667,9 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnIsStoreInstallChanged(bool value)
     {
         OnPropertyChanged(nameof(CanConfigureAutoUpdatePolicy));
+        OnPropertyChanged(nameof(ShowHeaderUpdateButton));
+        OnPropertyChanged(nameof(CanApplyAvailableUpdate));
+        ApplyAvailableUpdateCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRefreshStoreAddOnCatalog));
         OnPropertyChanged(nameof(CanBrowseUnlimitedAddressesInStore));
         OnPropertyChanged(nameof(UnlimitedAddressesCallToActionMessage));
@@ -675,6 +708,12 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanExportSupportDiagnostics));
     }
 
+    partial void OnIsCheckingForUpdatesChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanApplyAvailableUpdate));
+        ApplyAvailableUpdateCommand.NotifyCanExecuteChanged();
+    }
+
     partial void OnIsLoadingStoreAddOnsChanged(bool value)
     {
         OnPropertyChanged(nameof(CanRefreshStoreAddOnCatalog));
@@ -696,6 +735,29 @@ public partial class MainWindowViewModel : ViewModelBase
         UpdateStatusMessage = value
             ? "Automatic update checks enabled for this install channel."
             : "Automatic update checks disabled.";
+    }
+
+    partial void OnIsUpdateAvailableChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowHeaderUpdateButton));
+        OnPropertyChanged(nameof(CanApplyAvailableUpdate));
+        ApplyAvailableUpdateCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsUpdateInstallerReadyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(UpdateButtonToolTip));
+    }
+
+    partial void OnAvailableUpdateVersionChanged(string value)
+    {
+        OnPropertyChanged(nameof(UpdateButtonToolTip));
+    }
+
+    partial void OnIsApplyingAvailableUpdateChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanApplyAvailableUpdate));
+        ApplyAvailableUpdateCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnSelectedThemePreferenceChanged(AppThemePreference value)
@@ -782,6 +844,31 @@ public partial class MainWindowViewModel : ViewModelBase
         StatusMessage = value
             ? "Store install simulation enabled for local GUI testing."
             : "Store install simulation disabled; native channel detection restored.";
+    }
+
+    partial void OnUpdateVersionOverrideForTestingChanged(string value)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        if (!string.Equals(normalized, value, StringComparison.Ordinal))
+        {
+            UpdateVersionOverrideForTesting = normalized;
+            return;
+        }
+
+        updateService.VersionOverrideForTesting = normalized;
+        OnPropertyChanged(nameof(HasUpdateVersionOverrideForTesting));
+        ClearAvailableUpdateState();
+
+        if (isApplyingInitialSetup)
+        {
+            return;
+        }
+
+        LastError = null;
+        UpdateStatusMessage = string.IsNullOrWhiteSpace(normalized)
+            ? $"Update test override cleared. Check for Updates now uses installed version {CurrentVersion}."
+            : $"Update test override set to {normalized}. Re-run Check for Updates to exercise update availability before publishing.";
+        StatusMessage = UpdateStatusMessage;
     }
 
     partial void OnSelectedDatasetProviderIdChanged(string value)
@@ -1382,6 +1469,57 @@ public partial class MainWindowViewModel : ViewModelBase
         return ExecuteUpdateCheckAsync(fromStartupPolicy: false, CancellationToken.None);
     }
 
+    [RelayCommand(CanExecute = nameof(CanApplyAvailableUpdate))]
+    private async Task ApplyAvailableUpdateAsync()
+    {
+        if (!CanApplyAvailableUpdate)
+        {
+            return;
+        }
+
+        IsApplyingAvailableUpdate = true;
+        LastError = null;
+
+        try
+        {
+            StatusMessage = IsUpdateInstallerReady
+                ? "Launching downloaded update installer..."
+                : "Downloading update and preparing installer...";
+
+            var result = await updateService.DownloadAndInstallPendingUpdateAsync(CancellationToken.None);
+            UpdateStatusMessage = result.Message;
+            StatusMessage = result.Message;
+
+            if (result.StartedInstaller)
+            {
+                IsUpdateAvailable = false;
+                IsUpdateInstallerReady = false;
+                AvailableUpdateVersion = string.Empty;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            UpdateStatusMessage = "Update installation was canceled.";
+            StatusMessage = "Update installation was canceled.";
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            UpdateStatusMessage = ex.Message;
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            IsApplyingAvailableUpdate = false;
+        }
+    }
+
+    [RelayCommand]
+    private void ClearUpdateVersionOverrideForTesting()
+    {
+        UpdateVersionOverrideForTesting = string.Empty;
+    }
+
     private async Task ExecuteUpdateCheckAsync(bool fromStartupPolicy, CancellationToken cancellationToken)
     {
         if (IsCheckingForUpdates)
@@ -1405,6 +1543,16 @@ public partial class MainWindowViewModel : ViewModelBase
             var result = fromStartupPolicy
                 ? await updateService.CheckForUpdatesOnStartupAsync(cancellationToken)
                 : await updateService.CheckForUpdatesAsync(cancellationToken);
+
+            if (result.WasCheckSuccessful)
+            {
+                ApplyAvailableUpdateState(result);
+            }
+            else if (fromStartupPolicy)
+            {
+                ClearAvailableUpdateState();
+            }
+
             UpdateStatusMessage = result.Message;
 
             if (!fromStartupPolicy || result.IsUpdateAvailable)
@@ -1432,6 +1580,26 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsCheckingForUpdates = false;
         }
+    }
+
+    private void ApplyAvailableUpdateState(UpdateCheckResult result)
+    {
+        if (result.UsedStorePath || !result.IsUpdateAvailable)
+        {
+            ClearAvailableUpdateState();
+            return;
+        }
+
+        IsUpdateAvailable = true;
+        IsUpdateInstallerReady = result.IsInstallerReady;
+        AvailableUpdateVersion = result.LatestVersion ?? string.Empty;
+    }
+
+    private void ClearAvailableUpdateState()
+    {
+        IsUpdateAvailable = false;
+        IsUpdateInstallerReady = false;
+        AvailableUpdateVersion = string.Empty;
     }
 
     [RelayCommand]
@@ -2329,6 +2497,7 @@ public partial class MainWindowViewModel : ViewModelBase
         EnableMapAddressPointDeduplication = settings.EnableMapAddressPointDeduplication;
         IgnoreUnlimitedAddressesEntitlement = settings.IgnoreUnlimitedAddressesEntitlement;
         SimulateStoreInstallForUiTesting = settings.SimulateStoreInstallForUiTesting;
+        UpdateVersionOverrideForTesting = settings.UpdateVersionOverrideForTesting;
         IsSetupGuidanceExpanded = settings.IsSetupGuidanceExpanded;
         IsResultsGuidanceExpanded = settings.IsResultsGuidanceExpanded;
         IsOptionsExpanded = settings.IsOptionsExpanded;
@@ -2434,6 +2603,7 @@ public partial class MainWindowViewModel : ViewModelBase
             EnableMapAddressPointDeduplication = EnableMapAddressPointDeduplication,
             IgnoreUnlimitedAddressesEntitlement = IgnoreUnlimitedAddressesEntitlement,
             SimulateStoreInstallForUiTesting = SimulateStoreInstallForUiTesting,
+            UpdateVersionOverrideForTesting = UpdateVersionOverrideForTesting,
             IsSetupGuidanceExpanded = IsSetupGuidanceExpanded,
             IsResultsGuidanceExpanded = IsResultsGuidanceExpanded,
             IsOptionsExpanded = IsOptionsExpanded

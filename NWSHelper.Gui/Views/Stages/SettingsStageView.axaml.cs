@@ -154,10 +154,10 @@ public partial class SettingsStageView : UserControl
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 DeveloperSettingsSection.BringIntoView();
-                IgnoreUnlimitedAddressesEntitlementCheckBox.Focus();
+                UpdateVersionOverrideForTestingTextBox.Focus();
             }, DispatcherPriority.Background);
 
-            if (IgnoreUnlimitedAddressesEntitlementCheckBox.IsFocused)
+            if (UpdateVersionOverrideForTestingTextBox.IsFocused)
             {
                 break;
             }

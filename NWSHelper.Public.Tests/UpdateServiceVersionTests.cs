@@ -68,6 +68,28 @@ public class UpdateServiceVersionTests
     }
 
     [Fact]
+    public void NetSparkleUpdateService_RuntimeVersionOverrideUpdatesAndClearsInstalledVersion()
+    {
+        using var service = new NetSparkleUpdateService(currentVersionOverride: "1.0.16+build.abc");
+        var createUpdater = typeof(NetSparkleUpdateService).GetMethod("GetOrCreateSparkleUpdater", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(createUpdater);
+
+        var updater = createUpdater!.Invoke(service, new object[]
+        {
+            "https://example.invalid/appcast.xml",
+            Convert.ToBase64String(new byte[32])
+        });
+
+        Assert.NotNull(updater);
+
+        service.VersionOverrideForTesting = "1.0.9";
+        Assert.Equal("1.0.9", GetInstalledVersion(updater!));
+
+        service.VersionOverrideForTesting = string.Empty;
+        Assert.Equal("1.0.16", GetInstalledVersion(updater!));
+    }
+
+    [Fact]
     public void ResolveAppcastUrl_RewritesLegacyPrivateFeedFromEnvironmentOverride()
     {
         using var appcastVariable = new EnvironmentVariableScope(
@@ -169,9 +191,10 @@ public class UpdateServiceVersionTests
             UpdateStatus.UpdateAvailable,
             latest,
             fromStartupPolicy: true,
-            interactiveUiAvailable: true);
+            interactiveUiAvailable: true,
+            installerReady: false);
 
-        Assert.Equal("Update available: 1.0.16. Use Check for Updates to review and install.", message);
+        Assert.Equal("Update available: 1.0.16. Click Update in the header to download and install.", message);
     }
 
     [Fact]
@@ -187,7 +210,8 @@ public class UpdateServiceVersionTests
             UpdateStatus.UpdateAvailable,
             latest,
             fromStartupPolicy: false,
-            interactiveUiAvailable: true);
+            interactiveUiAvailable: true,
+            installerReady: false);
 
         Assert.Equal("Update review opened for 1.0.16. Follow the updater prompts to download and install.", message);
     }
@@ -205,9 +229,51 @@ public class UpdateServiceVersionTests
             UpdateStatus.UpdateAvailable,
             latest,
             fromStartupPolicy: false,
-            interactiveUiAvailable: false);
+            interactiveUiAvailable: false,
+            installerReady: false);
 
         Assert.Equal("Update available: 1.0.16.", message);
+    }
+
+    [Fact]
+    public void BuildStatusMessage_ForStartupUpdateWithDownloadedInstaller_PromptsImmediateInstall()
+    {
+        var latest = new AppCastItem
+        {
+            Version = "1.0.16",
+            ShortVersion = "1.0.16"
+        };
+
+        var message = NetSparkleUpdateService.BuildStatusMessage(
+            UpdateStatus.UpdateAvailable,
+            latest,
+            fromStartupPolicy: true,
+            interactiveUiAvailable: true,
+            installerReady: true);
+
+        Assert.Equal("Update ready to install: 1.0.16. Click Update in the header to install.", message);
+    }
+
+    [Fact]
+    public void NetSparkleUpdateService_DefaultsAutoUpdateEnabledForNewInstall()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), $"NWSHelperPublicUpdateDefaults-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDirectory);
+        var configPath = Path.Combine(tempDirectory, "gui-settings.json");
+
+        try
+        {
+            using var service = new NetSparkleUpdateService(filePath: configPath, currentVersionOverride: "1.0.16");
+
+            Assert.True(service.AutoUpdateEnabled);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        }
     }
 
     [Theory]
@@ -234,6 +300,8 @@ public class UpdateServiceVersionTests
         Assert.Contains(expectedBackground, headerHtml, StringComparison.Ordinal);
         Assert.Contains(expectedTextColor, headerHtml, StringComparison.Ordinal);
         Assert.Contains(expectedLinkColor, headerHtml, StringComparison.Ordinal);
+        Assert.Contains("html, body", headerHtml, StringComparison.Ordinal);
+        Assert.Contains("min-height: 100%", headerHtml, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -242,6 +310,15 @@ public class UpdateServiceVersionTests
     public void GetUpdateWindowBackgroundHex_ReturnsThemeSurface(bool useDarkTheme, string expected)
     {
         Assert.Equal(expected, NetSparkleUpdateService.GetUpdateWindowBackgroundHex(useDarkTheme));
+    }
+
+    [Theory]
+    [InlineData(true, "#1F2937", "#374151")]
+    [InlineData(false, "#F8FAFC", "#CBD5E1")]
+    public void UpdateContentThemeColors_ReturnExpectedSurfaceAndBorder(bool useDarkTheme, string expectedBackground, string expectedBorder)
+    {
+        Assert.Equal(expectedBackground, NetSparkleUpdateService.GetUpdateContentBackgroundHex(useDarkTheme));
+        Assert.Equal(expectedBorder, NetSparkleUpdateService.GetUpdateContentBorderHex(useDarkTheme));
     }
 
     private sealed class EnvironmentVariableScope : IDisposable
@@ -260,5 +337,19 @@ public class UpdateServiceVersionTests
         {
             Environment.SetEnvironmentVariable(name, previousValue);
         }
+    }
+
+    private static string? GetInstalledVersion(object updater)
+    {
+        var configurationProperty = updater.GetType().GetProperty("Configuration", BindingFlags.Instance | BindingFlags.Public);
+        Assert.NotNull(configurationProperty);
+
+        var configuration = configurationProperty!.GetValue(updater);
+        Assert.NotNull(configuration);
+
+        var installedVersionProperty = configuration!.GetType().GetProperty("InstalledVersion", BindingFlags.Instance | BindingFlags.Public);
+        Assert.NotNull(installedVersionProperty);
+
+        return installedVersionProperty!.GetValue(configuration) as string;
     }
 }

@@ -407,7 +407,7 @@
                                 Margin="0,4,0,0"
                                 IsVisible="False">
                         <TextBlock Text="Developer Settings" FontSize="16" FontWeight="SemiBold" />
-                        <TextBlock Text="Internal overrides for validating premium purchase and entitlement UX." />
+                        <TextBlock Text="Internal overrides for validating updater, premium purchase, and entitlement UX." />
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <TextBlock VerticalAlignment="Center" Text="Runtime channel" Width="180" />
                             <TextBlock VerticalAlignment="Center"
@@ -416,6 +416,18 @@
                         </StackPanel>
                         <TextBlock TextWrapping="Wrap"
                                    Text="{Binding StoreRuntimeDiagnosticsMessage}" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Update check version" Width="180" />
+                            <TextBox x:Name="UpdateVersionOverrideForTestingTextBox"
+                                     Width="220"
+                                     Text="{Binding UpdateVersionOverrideForTesting, Mode=TwoWay}"
+                                     Watermark="{Binding CurrentVersion}" />
+                            <Button Content="Use actual"
+                                    Command="{Binding ClearUpdateVersionOverrideForTestingCommand}"
+                                    IsVisible="{Binding HasUpdateVersionOverrideForTesting}" />
+                        </StackPanel>
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="Leave blank to use the installed app version. Enter a lower version here to make NetSparkle compare as if this build were older, then run Check for Updates to test the updater before publishing." />
                         <CheckBox IsChecked="{Binding SimulateStoreInstallForUiTesting, Mode=TwoWay}"
                                   Content="Simulate Microsoft Store install" />
                         <TextBlock TextWrapping="Wrap"

@@ -88,6 +88,8 @@ public sealed class GuiSetupSettings
 
     public bool SimulateStoreInstallForUiTesting { get; set; }
 
+    public string UpdateVersionOverrideForTesting { get; set; } = string.Empty;
+
     public bool IsSetupGuidanceExpanded { get; set; } = true;
 
     public bool IsResultsGuidanceExpanded { get; set; } = true;

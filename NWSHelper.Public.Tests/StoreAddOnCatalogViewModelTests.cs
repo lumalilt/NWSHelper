@@ -610,20 +610,32 @@ public class StoreAddOnCatalogViewModelTests
     {
         public string CurrentVersion { get; set; } = "1.0.0";
 
+        public string VersionOverrideForTesting { get; set; } = string.Empty;
+
         public bool AutoUpdateEnabled { get; set; }
 
         public bool IsStoreInstall { get; set; }
 
+        public UpdateCheckResult NextCheckResult { get; set; } = new() { Message = "noop", WasCheckSuccessful = true };
+
+        public UpdateInstallResult NextInstallResult { get; set; } = new() { Message = "noop" };
+
         public Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new UpdateCheckResult { Message = "noop" });
+            return Task.FromResult(NextCheckResult);
         }
 
         public Task<UpdateCheckResult> CheckForUpdatesOnStartupAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new UpdateCheckResult { Message = "noop" });
+            return Task.FromResult(NextCheckResult);
+        }
+
+        public Task<UpdateInstallResult> DownloadAndInstallPendingUpdateAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(NextInstallResult);
         }
 
         public void Dispose()

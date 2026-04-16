@@ -812,20 +812,32 @@ public class StoreContinuityViewModelTests
     {
         public string CurrentVersion { get; set; } = "1.0.0-test";
 
+        public string VersionOverrideForTesting { get; set; } = string.Empty;
+
         public bool IsStoreInstall { get; set; }
 
         public bool AutoUpdateEnabled { get; set; } = true;
 
+        public UpdateCheckResult NextCheckResult { get; set; } = new() { Message = "No updates.", WasCheckSuccessful = true };
+
+        public UpdateInstallResult NextInstallResult { get; set; } = new() { Message = "noop" };
+
         public Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new UpdateCheckResult { Message = "No updates." });
+            return Task.FromResult(NextCheckResult);
         }
 
         public Task<UpdateCheckResult> CheckForUpdatesOnStartupAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new UpdateCheckResult { Message = "No updates." });
+            return Task.FromResult(NextCheckResult);
+        }
+
+        public Task<UpdateInstallResult> DownloadAndInstallPendingUpdateAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(NextInstallResult);
         }
     }
 
