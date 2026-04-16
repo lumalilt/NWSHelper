@@ -195,23 +195,34 @@ public interface IStoreRuntimeContextProvider
 
 public sealed class StoreRuntimeContextProvider : IStoreRuntimeContextProvider
 {
+    public const string DefaultUiTestPackageFamilyName = "NWSHelper.Public.StoreUiTest";
+
     private readonly Func<string, string?> environmentReader;
     private readonly Func<string?> processPathReader;
+    private readonly GuiConfigurationStore configurationStore;
 
     public StoreRuntimeContextProvider(
         Func<string, string?>? environmentReader = null,
-        Func<string?>? processPathReader = null)
+        Func<string?>? processPathReader = null,
+        string? filePath = null)
     {
         this.environmentReader = environmentReader ?? Environment.GetEnvironmentVariable;
         this.processPathReader = processPathReader ?? (() => Environment.ProcessPath);
+        configurationStore = new GuiConfigurationStore(filePath);
     }
 
     public StoreRuntimeContext GetCurrent()
     {
         var now = DateTimeOffset.UtcNow;
         var processPath = ReadTrimmedValue(() => processPathReader());
-        var packageFamilyName = ReadTrimmedValue(() => environmentReader("NWSHELPER_STORE_PACKAGE_FAMILY_NAME"));
+        var configuredPackageFamilyName = ReadTrimmedValue(() => environmentReader("NWSHELPER_STORE_PACKAGE_FAMILY_NAME"));
         var forceStoreChannel = ReadTrimmedValue(() => environmentReader("NWSHELPER_FORCE_STORE_CHANNEL"));
+        var forceStoreChannelFromSettings = ReadSetupSimulationOverride();
+        var packageFamilyName = !string.IsNullOrWhiteSpace(configuredPackageFamilyName)
+            ? configuredPackageFamilyName
+            : forceStoreChannelFromSettings
+                ? DefaultUiTestPackageFamilyName
+                : string.Empty;
 
         if (string.Equals(forceStoreChannel, "1", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(forceStoreChannel, "true", StringComparison.OrdinalIgnoreCase))
@@ -222,6 +233,20 @@ public sealed class StoreRuntimeContextProvider : IStoreRuntimeContextProvider
                 IsStoreInstall = true,
                 ProofAuthority = StoreProofAuthority.Heuristic,
                 DetectionSource = "environment-override",
+                PackageFamilyName = packageFamilyName,
+                ProcessPath = processPath,
+                CapturedAtUtc = now,
+            };
+        }
+
+        if (forceStoreChannelFromSettings)
+        {
+            return new StoreRuntimeContext
+            {
+                IsPackaged = true,
+                IsStoreInstall = true,
+                ProofAuthority = StoreProofAuthority.Heuristic,
+                DetectionSource = "settings-override",
                 PackageFamilyName = packageFamilyName,
                 ProcessPath = processPath,
                 CapturedAtUtc = now,
@@ -252,6 +277,18 @@ public sealed class StoreRuntimeContextProvider : IStoreRuntimeContextProvider
             ProcessPath = processPath,
             CapturedAtUtc = now,
         };
+    }
+
+    private bool ReadSetupSimulationOverride()
+    {
+        try
+        {
+            return configurationStore.Load().Setup?.SimulateStoreInstallForUiTesting ?? false;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string ReadTrimmedValue(Func<string?> valueFactory)

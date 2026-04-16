@@ -19,6 +19,8 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private const string SmartFillNoneOption = "None";
     private const string SupportUrl = "https://lumalilt.com/nwshelper/support";
+    private const string StoreRuntimeDiagnosticStoreLabel = "Store";
+    private const string StoreRuntimeDiagnosticNonStoreLabel = "Non-Store";
 
     private readonly IExtractionOrchestrator extractionOrchestrator;
     private readonly IDatasetDownloadService datasetDownloadService;
@@ -32,11 +34,14 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly IAccountLinkService accountLinkService;
     private readonly IUpdateService updateService;
     private readonly IStoreOwnershipVerifier storeOwnershipVerifier;
+    private readonly StoreListingOptions storeListingOptions;
+    private readonly IStoreRuntimeContextProvider storeRuntimeContextProvider;
     private IReadOnlyList<DatasetCatalogItem> availableDatasets = [];
     private CancellationTokenSource? activeRunCancellation;
     private TerritoryExtractionPlan? lastPreviewPlan;
     private EntitlementSnapshot activeEntitlementSnapshot = EntitlementSnapshot.CreateDefaultFree();
     private AccountLinkSnapshot activeAccountLinkSnapshot = AccountLinkSnapshot.CreateSignedOut();
+    private StoreRuntimeContext currentStoreRuntimeContext = new();
     private bool isApplyingInitialTheme;
     private bool isApplyingInitialSetup;
     private bool isApplyingInitialUpdateSettings;
@@ -86,6 +91,7 @@ public partial class MainWindowViewModel : ViewModelBase
         nameof(MapTileCacheLifeDays),
         nameof(EnableMapAddressPointDeduplication),
         nameof(IgnoreUnlimitedAddressesEntitlement),
+        nameof(SimulateStoreInstallForUiTesting),
         nameof(IsSetupGuidanceExpanded),
         nameof(IsResultsGuidanceExpanded),
         nameof(IsOptionsExpanded)
@@ -215,6 +221,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool ignoreUnlimitedAddressesEntitlement;
 
     [ObservableProperty]
+    private bool simulateStoreInstallForUiTesting;
+
+    [ObservableProperty]
     private bool isSetupGuidanceExpanded = true;
 
     [ObservableProperty]
@@ -294,6 +303,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private string updateStatusMessage = string.Empty;
+
+    [ObservableProperty]
+    private string storeRuntimeChannelLabel = StoreRuntimeDiagnosticNonStoreLabel;
+
+    [ObservableProperty]
+    private string storeRuntimeDiagnosticsMessage = "Runtime source: native detection.";
 
     [ObservableProperty]
     private bool isBusy;
@@ -383,7 +398,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private AppThemePreference selectedThemePreference = AppThemePreference.System;
 
     public MainWindowViewModel()
-        : this(null, null, null, null, null, null, null, null, null, null, null, null)
+        : this(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null)
     {
     }
 
@@ -400,21 +415,24 @@ public partial class MainWindowViewModel : ViewModelBase
         IGuiSettingsMigrationService? settingsMigrationService = null,
         IStoreAddOnCatalogService? storeAddOnCatalogService = null,
         ISupportDiagnosticsExportService? supportDiagnosticsExportService = null,
-        IStoreOwnershipVerifier? storeOwnershipVerifier = null)
+        IStoreOwnershipVerifier? storeOwnershipVerifier = null,
+        StoreListingOptions? storeListingOptions = null,
+        IStoreRuntimeContextProvider? storeRuntimeContextProvider = null)
     {
-        var storeRuntimeContextProvider = new StoreRuntimeContextProvider();
+        this.storeRuntimeContextProvider = storeRuntimeContextProvider ?? new StoreRuntimeContextProvider();
         this.extractionOrchestrator = extractionOrchestrator ?? new ExtractionOrchestrator();
         this.datasetDownloadService = datasetDownloadService ?? new DatasetDownloadService();
         this.outputPathActions = outputPathActions ?? new OutputPathActions();
         this.themeService = themeService ?? new ThemeService();
         this.setupSettingsService = setupSettingsService ?? new SetupSettingsService();
         this.settingsMigrationService = settingsMigrationService ?? new GuiSettingsMigrationService();
-        this.supportDiagnosticsExportService = supportDiagnosticsExportService ?? new SupportDiagnosticsExportService(storeRuntimeContextProvider: storeRuntimeContextProvider);
+        this.supportDiagnosticsExportService = supportDiagnosticsExportService ?? new SupportDiagnosticsExportService(storeRuntimeContextProvider: this.storeRuntimeContextProvider);
         this.entitlementService = entitlementService ?? new SupabaseEntitlementService();
         this.storeAddOnCatalogService = storeAddOnCatalogService ?? StoreAddOnCatalogServiceFactory.CreateDefault();
-        this.accountLinkService = accountLinkService ?? new AccountLinkService(storeRuntimeContextProvider: storeRuntimeContextProvider);
-        this.updateService = updateService ?? new NetSparkleUpdateService(storeRuntimeContextProvider: storeRuntimeContextProvider);
+        this.accountLinkService = accountLinkService ?? new AccountLinkService(storeRuntimeContextProvider: this.storeRuntimeContextProvider);
+        this.updateService = updateService ?? new NetSparkleUpdateService(storeRuntimeContextProvider: this.storeRuntimeContextProvider);
         this.storeOwnershipVerifier = storeOwnershipVerifier ?? StoreOwnershipVerifierFactory.CreateDefault();
+        this.storeListingOptions = storeListingOptions ?? new StoreListingOptions();
 
         DatasetProviders = this.datasetDownloadService.GetProviders();
 
@@ -450,7 +468,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         isApplyingInitialUpdateSettings = true;
         CurrentVersion = this.updateService.CurrentVersion;
-        IsStoreInstall = this.updateService.IsStoreInstall;
+        RefreshStoreRuntimeDiagnostics();
         AutoUpdateEnabled = this.updateService.AutoUpdateEnabled;
         isApplyingInitialUpdateSettings = false;
         StoreAddOnCatalogMessage = GetDefaultStoreAddOnCatalogMessage();
@@ -511,11 +529,46 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool CanBrowseUnlimitedAddressesInStore => IsStoreInstall && !HasUnlimitedAddressesAddOn;
 
-    public bool ShowUnlimitedAddressesCapCallToAction => CanBrowseUnlimitedAddressesInStore && HasCappedOutputMessage;
+    public bool ShowUnlimitedAddressesResultCallToAction => HasCappedOutputMessage;
 
-    public bool ShowUnlimitedAddressesSettingsCallToAction => CanBrowseUnlimitedAddressesInStore;
+    public string UnlimitedAddressesCallToActionMessage => IsStoreInstall
+        ? "Need more than the free-tier cap? The Unlimited Addresses add-on removes the per-territory new-address limit for this Store install."
+        : "Need more than the free-tier cap? Download the Microsoft Store version, then view and purchase add-ons there.";
+
+    public string UnlimitedAddressesSettingsCallToActionMessage => IsStoreInstall
+        ? "Need to remove the free-tier new-address cap? Browse Unlimited Addresses for this Microsoft Store install."
+        : "Need to remove the free-tier new-address cap? Download the Microsoft Store version, then view add-ons there.";
+
+    public string UnlimitedAddressesActionButtonLabel => IsStoreInstall ? "View Available Add-ons" : "Download in Store";
+
+    public string UnlimitedAddressesWebActionButtonLabel => "View in Store (web)";
+
+    public string UnlimitedAddressesActionCaption => IsStoreInstall ? string.Empty : "View add-ons in Store version";
+
+    public bool HasUnlimitedAddressesActionCaption => !string.IsNullOrWhiteSpace(UnlimitedAddressesActionCaption);
+
+    public bool ShowUnlimitedAddressesWebActionButton => !IsStoreInstall;
+
+    public string UnlimitedAddressesActionToolTip => IsStoreInstall
+        ? "Open Settings and load Microsoft Store add-ons for this install"
+        : "Open the NWS Helper Microsoft Store listing in the Store app";
+
+    public string UnlimitedAddressesWebActionToolTip => "Open the NWS Helper Microsoft Store listing in your browser";
+
+    public bool ShowUnlimitedAddressesCapCallToAction => !HasUnlimitedAddressesAddOn && HasCappedOutputMessage;
+
+    public bool ShowUnlimitedAddressesSettingsCallToAction => !HasUnlimitedAddressesAddOn;
 
     public bool HasStoreAddOnOffers => StoreAddOnOffers.Count > 0;
+
+    public bool ShowStoreAddOnRefreshControls => IsStoreInstall;
+
+    public bool IsStoreRuntimeSimulated => string.Equals(currentStoreRuntimeContext.DetectionSource, "settings-override", StringComparison.OrdinalIgnoreCase) ||
+                                           string.Equals(currentStoreRuntimeContext.DetectionSource, "environment-override", StringComparison.OrdinalIgnoreCase);
+
+    public string StoreAddOnCatalogSectionDescription => IsStoreInstall
+        ? "Browse Microsoft Store durable add-ons for this app, see whether they are already owned, and start purchase flow from the packaged Windows build."
+        : "Install the Microsoft Store version to browse Microsoft Store durable add-ons for this app and start purchase flow there.";
 
     public bool CanConfigureAutoUpdatePolicy => !IsStoreInstall;
 
@@ -577,6 +630,7 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnCappedOutputMessageChanged(string value)
     {
         OnPropertyChanged(nameof(HasCappedOutputMessage));
+        OnPropertyChanged(nameof(ShowUnlimitedAddressesResultCallToAction));
         OnPropertyChanged(nameof(ShowUnlimitedAddressesCapCallToAction));
     }
 
@@ -585,8 +639,21 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanConfigureAutoUpdatePolicy));
         OnPropertyChanged(nameof(CanRefreshStoreAddOnCatalog));
         OnPropertyChanged(nameof(CanBrowseUnlimitedAddressesInStore));
+        OnPropertyChanged(nameof(UnlimitedAddressesCallToActionMessage));
+        OnPropertyChanged(nameof(UnlimitedAddressesSettingsCallToActionMessage));
+        OnPropertyChanged(nameof(UnlimitedAddressesActionButtonLabel));
+        OnPropertyChanged(nameof(UnlimitedAddressesWebActionButtonLabel));
+        OnPropertyChanged(nameof(UnlimitedAddressesActionCaption));
+        OnPropertyChanged(nameof(HasUnlimitedAddressesActionCaption));
+        OnPropertyChanged(nameof(ShowUnlimitedAddressesWebActionButton));
+        OnPropertyChanged(nameof(UnlimitedAddressesActionToolTip));
+        OnPropertyChanged(nameof(UnlimitedAddressesWebActionToolTip));
+        OnPropertyChanged(nameof(ShowUnlimitedAddressesResultCallToAction));
         OnPropertyChanged(nameof(ShowUnlimitedAddressesCapCallToAction));
         OnPropertyChanged(nameof(ShowUnlimitedAddressesSettingsCallToAction));
+        OnPropertyChanged(nameof(ShowStoreAddOnRefreshControls));
+        OnPropertyChanged(nameof(StoreAddOnCatalogSectionDescription));
+        OnPropertyChanged(nameof(IsStoreRuntimeSimulated));
         OnPropertyChanged(nameof(CanRestoreStorePurchase));
         OnPropertyChanged(nameof(CanExportSupportDiagnostics));
         OnPropertyChanged(nameof(ShowStoreRestoreRequiresSignInHint));
@@ -700,6 +767,21 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnIgnoreUnlimitedAddressesEntitlementChanged(bool value)
     {
         ApplyEntitlementSnapshot(activeEntitlementSnapshot);
+    }
+
+    partial void OnSimulateStoreInstallForUiTestingChanged(bool value)
+    {
+        RefreshStoreRuntimeDiagnostics();
+
+        if (isApplyingInitialSetup)
+        {
+            return;
+        }
+
+        LastError = null;
+        StatusMessage = value
+            ? "Store install simulation enabled for local GUI testing."
+            : "Store install simulation disabled; native channel detection restored.";
     }
 
     partial void OnSelectedDatasetProviderIdChanged(string value)
@@ -978,14 +1060,33 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task BrowseUnlimitedAddressesAddOnAsync()
     {
+        if (!IsStoreInstall)
+        {
+            await OpenStoreVersionInStoreAppAsync();
+            return;
+        }
+
         if (!CanBrowseUnlimitedAddressesInStore)
         {
-            StatusMessage = GetDefaultStoreAddOnCatalogMessage();
+            StoreAddOnCatalogMessage = GetDefaultStoreAddOnCatalogMessage();
+            StatusMessage = StoreAddOnCatalogMessage;
             return;
         }
 
         EnterSettingsStage();
         await EnsureStoreAddOnCatalogLoadedAsync();
+    }
+
+    [RelayCommand]
+    private Task OpenStoreVersionInStoreAppAsync()
+    {
+        return OpenStoreVersionListingAsync(storeListingOptions.BuildStoreAppUrl(), "Opened Microsoft Store app listing for the Store version.");
+    }
+
+    [RelayCommand]
+    private Task OpenStoreVersionInWebAsync()
+    {
+        return OpenStoreVersionListingAsync(storeListingOptions.BuildWebUrl(), "Opened Microsoft Store web listing for the Store version.");
     }
 
     [RelayCommand]
@@ -2227,6 +2328,7 @@ public partial class MainWindowViewModel : ViewModelBase
         MapTileCacheLifeDays = settings.MapTileCacheLifeDays;
         EnableMapAddressPointDeduplication = settings.EnableMapAddressPointDeduplication;
         IgnoreUnlimitedAddressesEntitlement = settings.IgnoreUnlimitedAddressesEntitlement;
+        SimulateStoreInstallForUiTesting = settings.SimulateStoreInstallForUiTesting;
         IsSetupGuidanceExpanded = settings.IsSetupGuidanceExpanded;
         IsResultsGuidanceExpanded = settings.IsResultsGuidanceExpanded;
         IsOptionsExpanded = settings.IsOptionsExpanded;
@@ -2331,6 +2433,7 @@ public partial class MainWindowViewModel : ViewModelBase
             MapTileCacheLifeDays = MapTileCacheLifeDays,
             EnableMapAddressPointDeduplication = EnableMapAddressPointDeduplication,
             IgnoreUnlimitedAddressesEntitlement = IgnoreUnlimitedAddressesEntitlement,
+            SimulateStoreInstallForUiTesting = SimulateStoreInstallForUiTesting,
             IsSetupGuidanceExpanded = IsSetupGuidanceExpanded,
             IsResultsGuidanceExpanded = IsResultsGuidanceExpanded,
             IsOptionsExpanded = IsOptionsExpanded
@@ -2365,6 +2468,31 @@ public partial class MainWindowViewModel : ViewModelBase
                 ? "IgnoreUnlimitedAddresses"
                 : $"{resolvedSnapshot.ValidationSource}+IgnoreUnlimitedAddresses"
         };
+    }
+
+    private void RefreshStoreRuntimeDiagnostics()
+    {
+        currentStoreRuntimeContext = storeRuntimeContextProvider.GetCurrent();
+        IsStoreInstall = currentStoreRuntimeContext.IsStoreInstall;
+        StoreRuntimeChannelLabel = currentStoreRuntimeContext.IsStoreInstall
+            ? StoreRuntimeDiagnosticStoreLabel
+            : StoreRuntimeDiagnosticNonStoreLabel;
+        StoreRuntimeDiagnosticsMessage = BuildStoreRuntimeDiagnosticsMessage(currentStoreRuntimeContext);
+    }
+
+    private static string BuildStoreRuntimeDiagnosticsMessage(StoreRuntimeContext context)
+    {
+        var sourceDescription = context.DetectionSource switch
+        {
+            "environment-override" => "Runtime source: environment override.",
+            "settings-override" => "Runtime source: Developer Settings override.",
+            "windowsapps-path" => "Runtime source: WindowsApps package detection.",
+            _ => "Runtime source: native detection."
+        };
+
+        return string.IsNullOrWhiteSpace(context.PackageFamilyName)
+            ? sourceDescription
+            : $"{sourceDescription} Package family: {context.PackageFamilyName}.";
     }
 
     private void ApplyEntitlementSnapshot(EntitlementSnapshot snapshot)
@@ -2512,6 +2640,21 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         UpdateAccountLinkDisplay();
+    }
+
+    private async Task OpenStoreVersionListingAsync(string launchUrl, string successMessage)
+    {
+        LastError = null;
+
+        if (await outputPathActions.OpenUrlAsync(launchUrl))
+        {
+            StoreAddOnCatalogMessage = GetDefaultStoreAddOnCatalogMessage();
+            StatusMessage = successMessage;
+            return;
+        }
+
+        LastError = $"Could not open Microsoft Store listing: {launchUrl}";
+        StatusMessage = "Open Microsoft Store listing failed.";
     }
 
     private void UpdateAccountLinkDisplay()

@@ -55,7 +55,8 @@ public partial class App : Application
                 accountLinkService,
                 updateService,
                 null,
-                storeAddOnCatalogService);
+                storeAddOnCatalogService,
+                storeRuntimeContextProvider: storeRuntimeContextProvider);
 
             desktop.MainWindow = mainWindow;
         }

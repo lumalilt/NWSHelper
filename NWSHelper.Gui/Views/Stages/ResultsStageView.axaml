@@ -63,23 +63,34 @@
                             Background="{DynamicResource CardBackgroundBrush}">
                         <TextBlock Text="{Binding CappedOutputMessage}" TextWrapping="Wrap" />
                     </Border>
-                    <Border IsVisible="{Binding ShowUnlimitedAddressesCapCallToAction}"
+                        <Border IsVisible="{Binding ShowUnlimitedAddressesResultCallToAction}"
                             Padding="10"
                             BorderThickness="1"
                             BorderBrush="{DynamicResource CardBorderBrush}"
                             Background="{DynamicResource ThemeSurfaceMidBrush}">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="Need to write more new addresses next time? The Unlimited Addresses add-on removes the free-tier cap for this Store install."
+                            <TextBlock Text="{Binding UnlimitedAddressesCallToActionMessage}"
                                        TextWrapping="Wrap" />
-                            <Button HorizontalAlignment="Left"
-                                    AutomationProperties.Name="View Available Add-ons"
-                                    Command="{Binding BrowseUnlimitedAddressesAddOnCommand}"
-                                    ToolTip.Tip="Open Settings and load Microsoft Store add-ons for this install">
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <TextBlock Text="🔓" />
-                                    <TextBlock Text="View Available Add-ons" />
-                                </StackPanel>
-                            </Button>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button HorizontalAlignment="Left"
+                                        AutomationProperties.Name="{Binding UnlimitedAddressesActionButtonLabel}"
+                                        Command="{Binding BrowseUnlimitedAddressesAddOnCommand}"
+                                        ToolTip.Tip="{Binding UnlimitedAddressesActionToolTip}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="🔓" />
+                                        <TextBlock Text="{Binding UnlimitedAddressesActionButtonLabel}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button HorizontalAlignment="Left"
+                                        IsVisible="{Binding ShowUnlimitedAddressesWebActionButton}"
+                                        AutomationProperties.Name="{Binding UnlimitedAddressesWebActionButtonLabel}"
+                                        Command="{Binding OpenStoreVersionInWebCommand}"
+                                        ToolTip.Tip="{Binding UnlimitedAddressesWebActionToolTip}"
+                                        Content="{Binding UnlimitedAddressesWebActionButtonLabel}" />
+                            </StackPanel>
+                            <TextBlock IsVisible="{Binding HasUnlimitedAddressesActionCaption}"
+                                       Text="{Binding UnlimitedAddressesActionCaption}"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
                     <Grid ColumnDefinitions="*,*,*,*,*" RowDefinitions="Auto,Auto" RowSpacing="8" ColumnSpacing="8">

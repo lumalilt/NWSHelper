@@ -118,6 +118,45 @@ public class UpdateServiceVersionTests
     }
 
     [Fact]
+    public void StoreRuntimeContextProvider_UsesPersistedDeveloperSettingForStoreUiTesting()
+    {
+        var tempDirectory = Path.Combine(Path.GetTempPath(), $"NWSHelperPublicStoreRuntimeTests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDirectory);
+        var configPath = Path.Combine(tempDirectory, "gui-settings.json");
+
+        try
+        {
+            var store = new GuiConfigurationStore(configPath);
+            store.Save(new GuiConfigurationDocument
+            {
+                Setup = new GuiSetupSettings
+                {
+                    SimulateStoreInstallForUiTesting = true
+                }
+            });
+
+            var provider = new StoreRuntimeContextProvider(
+                processPathReader: () => @"D:\source\repos\dmealo\NWSHelper.Public\NWSHelper.Gui\bin\Debug\net10.0\NWSHelper.Gui.exe",
+                filePath: configPath);
+
+            var context = provider.GetCurrent();
+
+            Assert.True(context.IsPackaged);
+            Assert.True(context.IsStoreInstall);
+            Assert.Equal(StoreProofAuthority.Heuristic, context.ProofAuthority);
+            Assert.Equal("settings-override", context.DetectionSource);
+            Assert.Equal(StoreRuntimeContextProvider.DefaultUiTestPackageFamilyName, context.PackageFamilyName);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void BuildStatusMessage_ForStartupUpdateAvailable_PromptsManualReview()
     {
         var latest = new AppCastItem

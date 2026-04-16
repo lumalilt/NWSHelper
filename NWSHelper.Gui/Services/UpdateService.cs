@@ -67,6 +67,7 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
 
     private readonly GuiConfigurationStore configurationStore;
     private readonly GuiUpdateSettings updateSettings;
+    private readonly IStoreRuntimeContextProvider storeRuntimeContextProvider;
     private readonly object updaterSync = new();
     private readonly string installedComparisonVersion;
 
@@ -80,8 +81,7 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
     {
         configurationStore = new GuiConfigurationStore(filePath);
         updateSettings = LoadSettings();
-        var storeRuntimeContext = (storeRuntimeContextProvider ?? new StoreRuntimeContextProvider()).GetCurrent();
-        IsStoreInstall = storeRuntimeContext.IsStoreInstall;
+        this.storeRuntimeContextProvider = storeRuntimeContextProvider ?? new StoreRuntimeContextProvider(filePath: filePath);
         CurrentVersion = string.IsNullOrWhiteSpace(currentVersionOverride)
             ? AppVersionProvider.GetDisplayVersion()
             : currentVersionOverride.Trim();
@@ -90,7 +90,7 @@ public sealed class NetSparkleUpdateService : IUpdateService, IDisposable
 
     public string CurrentVersion { get; }
 
-    public bool IsStoreInstall { get; }
+    public bool IsStoreInstall => storeRuntimeContextProvider.GetCurrent().IsStoreInstall;
 
     public bool AutoUpdateEnabled
     {

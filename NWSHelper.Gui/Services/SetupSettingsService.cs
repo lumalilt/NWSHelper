@@ -86,6 +86,8 @@ public sealed class GuiSetupSettings
 
     public bool IgnoreUnlimitedAddressesEntitlement { get; set; }
 
+    public bool SimulateStoreInstallForUiTesting { get; set; }
+
     public bool IsSetupGuidanceExpanded { get; set; } = true;
 
     public bool IsResultsGuidanceExpanded { get; set; } = true;

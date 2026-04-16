@@ -487,6 +487,9 @@ public class StoreContinuityViewModelTests
         Assert.Contains("AccountLinkSection", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("AccountLinkEmailTextBox", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("Developer Settings", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("StoreRuntimeChannelLabel", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("StoreRuntimeDiagnosticsMessage", settingsMarkup, StringComparison.Ordinal);
+        Assert.Contains("SimulateStoreInstallForUiTesting", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("IgnoreUnlimitedAddressesEntitlementCheckBox", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("IgnoreUnlimitedAddressesEntitlement", settingsMarkup, StringComparison.Ordinal);
         Assert.Contains("store-continuity-prompt", settingsMarkup, StringComparison.Ordinal);
@@ -501,6 +504,7 @@ public class StoreContinuityViewModelTests
         Assert.Contains("BringIntoView", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("PulseStoreContinuityPromptAsync", settingsCodeBehind, StringComparison.Ordinal);
         Assert.Contains("IgnoreUnlimitedAddressesEntitlement", viewModelCode, StringComparison.Ordinal);
+        Assert.Contains("SimulateStoreInstallForUiTesting", viewModelCode, StringComparison.Ordinal);
         Assert.Contains("OpenSupportLinkCommand", mainWindowMarkup, StringComparison.Ordinal);
         Assert.Contains("ToolTip.Tip=\"Support\"", mainWindowMarkup, StringComparison.Ordinal);
         Assert.True(mainWindowMarkup.IndexOf("OpenSupportLinkCommand", StringComparison.Ordinal) < mainWindowMarkup.LastIndexOf("GoToSettingsCommand", StringComparison.Ordinal));
@@ -517,6 +521,7 @@ public class StoreContinuityViewModelTests
         ISupportDiagnosticsExportService? supportDiagnosticsExportService = null,
         IStoreOwnershipVerifier? storeOwnershipVerifier = null)
     {
+        var resolvedUpdateService = updateService ?? new FakeUpdateService();
         return new MainWindowViewModel(
             extractionOrchestrator: extractionOrchestrator ?? new CapturingExtractionOrchestrator(),
             outputPathActions: outputPathActions ?? new FakeOutputPathActions(),
@@ -525,10 +530,15 @@ public class StoreContinuityViewModelTests
             setupSettingsService: new FakeSetupSettingsService(),
             entitlementService: entitlementService ?? new FakeEntitlementService(),
             accountLinkService: accountLinkService ?? new FakeAccountLinkService(),
-            updateService: updateService ?? new FakeUpdateService(),
+            updateService: resolvedUpdateService,
             settingsMigrationService: new FakeGuiSettingsMigrationService(),
             supportDiagnosticsExportService: supportDiagnosticsExportService ?? new FakeSupportDiagnosticsExportService(),
-            storeOwnershipVerifier: storeOwnershipVerifier ?? FakeStoreOwnershipVerifier.NotOwned());
+            storeOwnershipVerifier: storeOwnershipVerifier ?? FakeStoreOwnershipVerifier.NotOwned(),
+            storeRuntimeContextProvider: new FakeStoreRuntimeContextProvider(new StoreRuntimeContext
+            {
+                IsStoreInstall = resolvedUpdateService.IsStoreInstall,
+                DetectionSource = resolvedUpdateService.IsStoreInstall ? "windowsapps-path" : "none"
+            }));
     }
 
     private static string GetRepositoryRoot()
@@ -817,6 +827,18 @@ public class StoreContinuityViewModelTests
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(new UpdateCheckResult { Message = "No updates." });
         }
+    }
+
+    private sealed class FakeStoreRuntimeContextProvider : IStoreRuntimeContextProvider
+    {
+        private readonly StoreRuntimeContext context;
+
+        public FakeStoreRuntimeContextProvider(StoreRuntimeContext context)
+        {
+            this.context = context;
+        }
+
+        public StoreRuntimeContext GetCurrent() => context;
     }
 
     private sealed class FakeSupportDiagnosticsExportService : ISupportDiagnosticsExportService

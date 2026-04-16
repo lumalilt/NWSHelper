@@ -178,17 +178,28 @@
                                 BorderBrush="{DynamicResource CardBorderBrush}"
                                 Background="{DynamicResource ThemeSurfaceMidBrush}">
                             <StackPanel Spacing="8">
-                                <TextBlock Text="Need to remove the free-tier new-address cap? Browse Unlimited Addresses for this Microsoft Store install."
+                                <TextBlock Text="{Binding UnlimitedAddressesSettingsCallToActionMessage}"
                                            TextWrapping="Wrap" />
-                                <Button HorizontalAlignment="Left"
-                                        AutomationProperties.Name="View Available Add-ons"
-                                        Command="{Binding BrowseUnlimitedAddressesAddOnCommand}"
-                                        ToolTip.Tip="Load Microsoft Store add-ons for this install">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <TextBlock Text="🔓" />
-                                        <TextBlock Text="View Available Add-ons" />
-                                    </StackPanel>
-                                </Button>
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <Button HorizontalAlignment="Left"
+                                            AutomationProperties.Name="{Binding UnlimitedAddressesActionButtonLabel}"
+                                            Command="{Binding BrowseUnlimitedAddressesAddOnCommand}"
+                                            ToolTip.Tip="{Binding UnlimitedAddressesActionToolTip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="🔓" />
+                                            <TextBlock Text="{Binding UnlimitedAddressesActionButtonLabel}" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button HorizontalAlignment="Left"
+                                            IsVisible="{Binding ShowUnlimitedAddressesWebActionButton}"
+                                            AutomationProperties.Name="{Binding UnlimitedAddressesWebActionButtonLabel}"
+                                            Command="{Binding OpenStoreVersionInWebCommand}"
+                                            ToolTip.Tip="{Binding UnlimitedAddressesWebActionToolTip}"
+                                            Content="{Binding UnlimitedAddressesWebActionButtonLabel}" />
+                                </StackPanel>
+                                <TextBlock IsVisible="{Binding HasUnlimitedAddressesActionCaption}"
+                                           Text="{Binding UnlimitedAddressesActionCaption}"
+                                           TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
 
@@ -212,9 +223,10 @@
 
                         <TextBlock Text="Microsoft Store Add-Ons" FontWeight="SemiBold" />
                         <TextBlock TextWrapping="Wrap"
-                                   Text="Browse Microsoft Store durable add-ons for this app, see whether they are already owned, and start purchase flow from the packaged Windows build." />
+                                   Text="{Binding StoreAddOnCatalogSectionDescription}" />
 
-                        <StackPanel Orientation="Horizontal" Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="10"
+                                    IsVisible="{Binding ShowStoreAddOnRefreshControls}">
                             <Button Content="Refresh Store Add-Ons"
                                     Command="{Binding RefreshStoreAddOnCatalogCommand}"
                                     IsEnabled="{Binding CanRefreshStoreAddOnCatalog}"
@@ -396,6 +408,18 @@
                                 IsVisible="False">
                         <TextBlock Text="Developer Settings" FontSize="16" FontWeight="SemiBold" />
                         <TextBlock Text="Internal overrides for validating premium purchase and entitlement UX." />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock VerticalAlignment="Center" Text="Runtime channel" Width="180" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding StoreRuntimeChannelLabel}"
+                                       FontWeight="SemiBold" />
+                        </StackPanel>
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="{Binding StoreRuntimeDiagnosticsMessage}" />
+                        <CheckBox IsChecked="{Binding SimulateStoreInstallForUiTesting, Mode=TwoWay}"
+                                  Content="Simulate Microsoft Store install" />
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="Uses the same Store channel test path as NWSHELPER_FORCE_STORE_CHANNEL without requiring environment variables for local GUI testing. Environment variables still override this setting when present." />
                         <CheckBox x:Name="IgnoreUnlimitedAddressesEntitlementCheckBox"
                                   IsChecked="{Binding IgnoreUnlimitedAddressesEntitlement, Mode=TwoWay}"
                                   Content="Ignore Unlimited Addresses entitlement" />

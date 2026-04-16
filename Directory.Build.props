@@ -6,6 +6,7 @@
     <VersionMinor Condition="'$(VersionMinor)' == '' and '$(VersionJsonRaw)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(VersionJsonRaw)', '&quot;minor&quot;\s*:\s*(\d+)').Groups[1].Value)</VersionMinor>
     <VersionPatch Condition="'$(VersionPatch)' == '' and '$(VersionJsonRaw)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(VersionJsonRaw)', '&quot;patch&quot;\s*:\s*(\d+)').Groups[1].Value)</VersionPatch>
     <CorePackageVersionFromJson Condition="'$(CorePackageVersionFromJson)' == '' and '$(VersionJsonRaw)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(VersionJsonRaw)', '&quot;corePackageVersion&quot;\s*:\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</CorePackageVersionFromJson>
+    <StoreAppProductIdFromJson Condition="'$(StoreAppProductIdFromJson)' == '' and '$(VersionJsonRaw)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(VersionJsonRaw)', '&quot;storeAppProductId&quot;\s*:\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</StoreAppProductIdFromJson>
     <VersionPrefixFromJson Condition="'$(VersionPrefixFromJson)' == '' and '$(VersionMajor)' != '' and '$(VersionMinor)' != '' and '$(VersionPatch)' != ''">$(VersionMajor).$(VersionMinor).$(VersionPatch)</VersionPrefixFromJson>
 
     <CorePackageVersion Condition="'$(CorePackageVersion)' == '' and '$(CorePackageVersionFromJson)' != ''">$(CorePackageVersionFromJson)</CorePackageVersion>
@@ -16,4 +17,11 @@
     <InformationalVersion Condition="'$(InformationalVersion)' == ''">$(Version)</InformationalVersion>
     <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">1.0.0.0</AssemblyVersion>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(StoreAppProductIdFromJson)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>NWSHelperStoreAppProductId</_Parameter1>
+      <_Parameter2>$(StoreAppProductIdFromJson)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>
