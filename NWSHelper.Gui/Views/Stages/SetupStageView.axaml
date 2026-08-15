@@ -31,7 +31,7 @@
                             <Expander.Header>
                                 <StackPanel Spacing="2">
                                     <TextBlock Text="How to use this with your territory app" FontWeight="SemiBold" />
-                                    <TextBlock Text="Export Territories and Territory Addresses from your territory app, select theme here, Preview and Run here for new addresses, then import the updated file back. Expand for more ->"
+                                    <TextBlock Text="Provide a territory boundary CSV and optionally export Territory Addresses from your territory app, select theme here, Preview and Run here for new addresses, then import the updated file back. Expand for more ->"
                                                FontSize="11"
                                                Opacity="0.8"
                                                TextWrapping="Wrap" />
@@ -43,7 +43,7 @@
                                     BorderBrush="{DynamicResource CardBorderBrush}"
                                     BorderThickness="1">
                                 <StackPanel Spacing="6">
-                                    <TextBlock Text="1. Export Territories CSV from your territory app." TextWrapping="Wrap" />
+                                    <TextBlock Text="1. Choose a territory boundary CSV with a Boundary column, or both Latitude and Longitude columns. A Territories export without either cannot be used to find addresses inside a territory." TextWrapping="Wrap" />
                                     <TextBlock Text="2. Export Territory Addresses CSV if you want to preserve statuses, notes, and merge with existing addresses." TextWrapping="Wrap" />
                                     <TextBlock Text="3. Choose the new-address dataset (country, state, then city/county), then build Preview." TextWrapping="Wrap" />
                                     <TextBlock Text="4. Review the preview and run extraction to create import-ready output files for your territory app." TextWrapping="Wrap" />
@@ -52,11 +52,11 @@
                         </Expander>
                         <Grid ColumnDefinitions="240,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
                             <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="Territories CSV *" />
-                                <TextBlock Classes="info-marker" ToolTip.Tip="Required territories boundary CSV file to find new addresses inside of." />
+                                <TextBlock Text="Territory Boundary CSV *" />
+                                <TextBlock Classes="info-marker" ToolTip.Tip="Required CSV with a Boundary column or both Latitude and Longitude columns, used to find new addresses inside a territory." />
                             </StackPanel>
-                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding BoundaryCsvPath, Mode=TwoWay}" Watermark="Path to territories CSV" />
-                            <Button x:Name="BoundaryCsvBrowseButton" Grid.Row="0" Grid.Column="2" Content="Browse..." Click="OnBrowseBoundaryCsvClick" ToolTip.Tip="Browse for territories CSV file" VerticalAlignment="Top" />
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding BoundaryCsvPath, Mode=TwoWay}" Watermark="Path to territory boundary CSV" />
+                            <Button x:Name="BoundaryCsvBrowseButton" Grid.Row="0" Grid.Column="2" Content="Browse..." Click="OnBrowseBoundaryCsvClick" ToolTip.Tip="Browse for territory boundary CSV file" VerticalAlignment="Top" />
 
                             <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="Existing Territory Addresses CSV" />

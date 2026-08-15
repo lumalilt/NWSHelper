@@ -59,6 +59,8 @@ public class GuidanceWorkflowTests
 
         Assert.Contains("IsExpanded=\"{Binding IsSetupGuidanceExpanded, Mode=TwoWay}\"", setupMarkup, StringComparison.Ordinal);
         Assert.Contains("How to use this with your territory app", setupMarkup, StringComparison.Ordinal);
+        Assert.Contains("Boundary column, or both Latitude and Longitude columns", setupMarkup, StringComparison.Ordinal);
+        Assert.Contains("Territory Boundary CSV *", setupMarkup, StringComparison.Ordinal);
         Assert.Contains("Recommended: Do specify your exported Territory Addresses file or existing statuses and notes will be lost if already present in the system.", setupMarkup, StringComparison.Ordinal);
 
         Assert.Contains("IsExpanded=\"{Binding IsResultsGuidanceExpanded, Mode=TwoWay}\"", resultsMarkup, StringComparison.Ordinal);
