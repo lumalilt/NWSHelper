@@ -245,7 +245,7 @@ public sealed class DatasetDownloadService : IDatasetDownloadService, IDisposabl
             .Where(record => !string.IsNullOrWhiteSpace(record.Source) && record.Job > 0)
             .GroupBy(record => record.Source!, StringComparer.OrdinalIgnoreCase)
             .Select(group => group
-                .OrderByDescending(item => item.Updated ?? 0)
+                .OrderByDescending(item => UpdatedSortValue(item.Updated))
                 .ThenByDescending(item => item.Job)
                 .First())
             .Select(record => new DatasetCatalogItem(
@@ -633,13 +633,30 @@ public sealed class DatasetDownloadService : IDatasetDownloadService, IDisposabl
             : trimmed;
     }
 
+    // OpenAddresses uses ISO 8601 now; older catalogs used Unix seconds. Keep
+    // both on one scale and treat unusable metadata as unknown, not a failed catalog.
+    private static decimal UpdatedSortValue(JsonElement updated)
+    {
+        if (updated.ValueKind == JsonValueKind.Number && updated.TryGetInt64(out var seconds))
+        {
+            return seconds;
+        }
+
+        if (updated.ValueKind == JsonValueKind.String && updated.TryGetDateTimeOffset(out var timestamp))
+        {
+            return (timestamp.UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks) / (decimal)TimeSpan.TicksPerSecond;
+        }
+
+        return decimal.MinValue;
+    }
+
     private sealed class OpenAddressesDataRecord
     {
         public string? Source { get; set; }
 
         public int Job { get; set; }
 
-        public long? Updated { get; set; }
+        public JsonElement Updated { get; set; }
 
         public long? Size { get; set; }
     }
