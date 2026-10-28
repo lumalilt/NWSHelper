@@ -13,6 +13,50 @@ namespace NWSHelper.Tests;
 
 public class DatasetDownloadServiceTests
 {
+    [Theory]
+    [InlineData("\"2026-10-16T17:07:35.668Z\"", "\"2026-10-16T18:07:35.668+01:00\"", 20)]
+    [InlineData("\"2026-10-16T17:07:35.669Z\"", "\"2026-10-16T17:07:35.668Z\"", 10)]
+    [InlineData("1720000000", "1720000001", 20)]
+    [InlineData("\"2024-07-03T09:46:40.500Z\"", "1720000000", 10)]
+    [InlineData("null", "\"2026-10-16T17:07:35.668Z\"", 20)]
+    [InlineData("\"bad timestamp\"", "1720000000", 20)]
+    [InlineData("{}", "null", 20)]
+    [InlineData("true", "[]", 20)]
+    public async Task GetDatasetsAsync_AcceptsCatalogTimestampFormatsAndOrdersNewestFirst(
+        string firstUpdated, string secondUpdated, int expectedJob)
+    {
+        var payload = $$"""
+            [
+              {"source":"us/md/test","job":10,"updated":{{firstUpdated}},"size":100},
+              {"source":"us/md/test","job":20,"updated":{{secondUpdated}},"size":200},
+              {"source":"us/va/test","job":30}
+            ]
+            """;
+        using var client = new HttpClient(new CatalogHandler(payload));
+        using var service = new DatasetDownloadService(client);
+
+        var datasets = await service.GetDatasetsAsync("openaddresses", "https://synthetic.invalid/api", CancellationToken.None);
+
+        Assert.Equal(2, datasets.Count);
+        Assert.Equal("us/md/test", datasets[0].Key);
+        Assert.Equal(expectedJob, datasets[0].JobId);
+        Assert.Equal(expectedJob * 10, datasets[0].SizeBytes);
+        Assert.Equal(30, datasets[1].JobId);
+    }
+
+    private sealed class CatalogHandler(string payload) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal("/api/data?layer=addresses", request.RequestUri!.PathAndQuery);
+            Assert.Null(request.Headers.Authorization);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
     [Fact]
     public async Task DownloadDatasetsAsync_ParsesJsonLinesWithoutFailing()
     {
